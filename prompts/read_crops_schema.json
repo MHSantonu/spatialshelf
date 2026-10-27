@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "image_index": {"type": "integer"},
+          "name": {"type": "string"},
+          "brand": {"type": "string"},
+          "size_value": {"type": "number"},
+          "size_unit": {"type": "string", "enum": ["g", "kg", "ml", "l", "pcs", "unknown"]},
+          "category": {"type": "string", "enum": ["snacks", "biscuits", "oil", "drinks", "spices", "rice_dal", "soap_detergent", "personal_care", "other"]},
+          "mrp_text": {"type": "string"},
+          "confidence": {"type": "number"}
+        },
+        "required": ["image_index", "name", "brand", "size_value", "size_unit", "category", "mrp_text", "confidence"]
+      }
+    }
+  },
+  "required": ["items"]
+}
