@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+openai
+meta-sam-parser>=0.1.0
+opencv-python-headless
+numpy
+torch
+transformers
+pillow
+python-dotenv

@@ -1,0 +1,8 @@
+openai
+meta-sam-parser>=0.1.0
+opencv-python
+numpy
+requests
+python-dotenv
+fastapi
+uvicorn
