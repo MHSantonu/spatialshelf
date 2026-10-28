@@ -26,6 +26,8 @@ SpatialShelf turns a 10-second phone video of a shop shelf into stock a customer
 - Stock decrement on confirmed orders
 - One shop, one merchant account, seeded
 
+**Planned additions (Nov 2, after the core loop works):** customers can order by sending a photo of a single product, recognised from visual memory first, Muse Spark as backup; and shopkeepers set prices and sizes by voice on the review cards ("chhoy sho ponchash" → ৳650).
+
 **Out of scope (do not build):**
 
 - Payments, delivery, couriers
@@ -128,6 +130,8 @@ The merchant's scans flow through the worker to SAM 3.1; customer orders come in
 Meta Model API has no embedding endpoint, so visual memory uses DINOv2, Meta's open image model, on CPU in the scan worker. Feeding the shop's product names to Voice Transcribe as `keywords` is a cheap accuracy win: the model is biased toward the exact brands on that shelf.
 
 **Scan pipeline, step by step**
+
+**Oct 27 spike result:** SAM 3.1 video mode stops at 16 tracked objects, while image mode returned up to 83 bottles on one frame. Detection therefore runs in image mode on 6–8 keyframes, and duplicates across frames are merged with DINOv2 embeddings plus position. Video mode is used only for the demo's mask-overlay player. Steps 2–3 below change accordingly.
 
 1. Laravel stores the upload and dispatches `ProcessScan`.
 2. Worker downsamples with ffmpeg to 720p at 4 fps (a 15 s pan ≈ 60 frames).

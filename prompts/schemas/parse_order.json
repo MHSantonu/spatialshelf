@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "requested_text": {"type": "string"},
+          "qty": {"type": "number"},
+          "qty_unit": {"type": "string"},
+          "product_id": {"type": "string", "enum": ["<live ids>", "none"]},
+          "status": {"type": "string", "enum": ["matched", "ambiguous", "not_found"]},
+          "alternative_ids": {"type": "array", "items": {"type": "string"}},
+          "confidence": {"type": "number"}
+        },
+        "required": ["requested_text", "qty", "qty_unit", "product_id", "status", "alternative_ids", "confidence"]
+      }
+    },
+    "intent": {"type": "string", "enum": ["new_order", "modify_order", "question", "other"]}
+  },
+  "required": ["lines", "intent"]
+}

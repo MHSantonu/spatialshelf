@@ -11,7 +11,7 @@
           "brand": {"type": "string"},
           "size_value": {"type": "number"},
           "size_unit": {"type": "string", "enum": ["g", "kg", "ml", "l", "pcs", "unknown"]},
-          "category": {"type": "string", "enum": ["snacks", "biscuits", "oil", "drinks", "spices", "rice_dal", "soap_detergent", "personal_care", "other"]},
+          "category": {"type": "string", "enum": ["snacks", "biscuits", "oil", "drinks", "spices", "rice_dal", "soap_detergent", "personal_care", "sauces_condiments", "other"]},
           "mrp_text": {"type": "string"},
           "confidence": {"type": "number"}
         },

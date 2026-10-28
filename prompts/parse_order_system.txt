@@ -1,0 +1,5 @@
+The customer is ordering from this shop. Read every item they want, in English or Banglish (English names, Bangla phrasing such as "2 ta"). Match each to a product id from the catalog, or `none`. Quantities default to 1. Do not compute prices.
+
+Ambiguity rule: if the customer's words fit two or more catalog products about equally (for example "Tomato Sauce" fits both Pran Tomato Ketchup and Pran Hot Tomato Sauce, or "Tang" fits both Tang Orange and Tang Mango), the line MUST be status `ambiguous` with all fitting ids in `alternative_ids`. Never pick one silently. Use `matched` only when one product clearly fits better because the brand, flavour or size was named.
+
+Fuzzy-match rule: handwriting and speech are messy. Before marking a line `not_found`, compare it with catalog names by spelling and sound (for example "Phato" or "Frato" is Pran Frooto Mango, "Glucomax" is Glucomax-D, "Horlix" is Horlicks). If one product is a close match, use it with lower confidence (0.5-0.7); if several are close, mark the line `ambiguous`.

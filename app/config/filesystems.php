@@ -47,6 +47,13 @@ return [
             'report' => false,
         ],
 
+        'shared' => [
+            'driver' => 'local',
+            'root' => env('SHARED_STORAGE_PATH', realpath(base_path('../storage-shared')) ?: base_path('../storage-shared')),
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

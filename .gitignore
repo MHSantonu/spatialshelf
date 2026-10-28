@@ -6,8 +6,12 @@ storage-shared/*
 spikes/out/
 worker/__pycache__/
 spikes/__pycache__/
+__pycache__/
+*.py[cod]
 samples/*.mp4
 samples/*.mov
+samples/**/*.mp4
+samples/**/*.mov
 node_modules
 worker_uvicorn*.log
 
