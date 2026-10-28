@@ -9,6 +9,7 @@ spikes/__pycache__/
 samples/*.mp4
 samples/*.mov
 node_modules
+worker_uvicorn*.log
 
 # Laravel defaults (app/ also gets its own .gitignore from the installer)
 /public/build
