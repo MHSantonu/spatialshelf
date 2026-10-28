@@ -27,6 +27,9 @@ class OrderLineFactory extends Factory
             'unit_price' => 50.00,
             'line_total' => 50.00,
             'match_confidence' => 1.0,
+            'status' => 'matched',
+            'note' => null,
+            'alternative_ids' => [],
         ];
     }
 }

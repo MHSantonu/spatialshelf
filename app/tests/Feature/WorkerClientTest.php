@@ -4,6 +4,7 @@ use App\Data\CropsResult;
 use App\Data\EmbedResult;
 use App\Data\PrepareResult;
 use App\Data\SegmentResult;
+use App\Data\ToWavResult;
 use App\Exceptions\WorkerException;
 use App\Services\WorkerClient;
 use Illuminate\Http\Client\ConnectionException;
@@ -141,6 +142,23 @@ test('embed returns the vector with its dim', function () {
         ->and($result->imagePath)->toBe('uploads/still.jpg')
         ->and($result->embedding)->toBe([0.5, 0.5])
         ->and($result->dim)->toBe(2);
+});
+
+test('toWav returns the converted path with format details', function () {
+    Http::fake(['http://worker.test/audio/to-wav' => Http::response([
+        'audio_path' => 'voice/note.ogg', 'wav_path' => 'voice/note.wav',
+        'sample_rate' => 24000, 'channels' => 1,
+    ])]);
+
+    $result = (new WorkerClient('http://worker.test'))->toWav('voice/note.ogg');
+
+    expect($result)->toBeInstanceOf(ToWavResult::class)
+        ->and($result->audioPath)->toBe('voice/note.ogg')
+        ->and($result->wavPath)->toBe('voice/note.wav')
+        ->and($result->sampleRate)->toBe(24000)
+        ->and($result->channels)->toBe(1);
+    Http::assertSent(fn (Request $request) => $request->url() === 'http://worker.test/audio/to-wav'
+        && $request['audio_path'] === 'voice/note.ogg');
 });
 
 test('a 422 response throws WorkerException with the worker message', function () {

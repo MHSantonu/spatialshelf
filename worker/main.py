@@ -19,6 +19,7 @@ from fastapi import FastAPI, HTTPException
 from PIL import UnidentifiedImageError
 from pydantic import BaseModel, Field
 
+from services.audio import AudioError, to_wav
 from services.crops import cut_crops
 from services.embed import EMBED_DIM, embed, ensure_model
 from services.sam import SamError, close_client as close_sam_client, segment_scan
@@ -254,3 +255,26 @@ def post_embed(body: EmbedRequest):
             status_code=422, detail=f"Not a readable image: {body.image_path}"
         )
     return {"image_path": body.image_path, "embedding": vector, "dim": EMBED_DIM}
+
+
+class ToWavRequest(BaseModel):
+    audio_path: str = Field(min_length=1)
+
+
+class ToWavResponse(BaseModel):
+    audio_path: str
+    wav_path: str
+    sample_rate: int
+    channels: int
+
+
+@app.post("/audio/to-wav", response_model=ToWavResponse)
+def audio_to_wav(body: ToWavRequest):
+    try:
+        return to_wav(SHARED_STORAGE_PATH, body.audio_path)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    except AudioError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))

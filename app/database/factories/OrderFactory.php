@@ -28,6 +28,7 @@ class OrderFactory extends Factory
             'source_type' => 'text',
             'raw_input_path' => null,
             'transcript' => null,
+            'context' => null,
             'total' => 0,
             'confirmed_at' => null,
         ];

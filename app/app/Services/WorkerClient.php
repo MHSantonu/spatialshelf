@@ -6,6 +6,7 @@ use App\Data\CropsResult;
 use App\Data\EmbedResult;
 use App\Data\PrepareResult;
 use App\Data\SegmentResult;
+use App\Data\ToWavResult;
 use App\Exceptions\WorkerException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -58,6 +59,17 @@ final class WorkerClient
         ]));
     }
 
+    public function toWav(string $audioPath): ToWavResult
+    {
+        return ToWavResult::fromArray($this->post('/audio/to-wav', [
+            'audio_path' => $audioPath,
+        ]));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
     private function post(string $path, array $payload): array
     {
         // retry() counts total attempts (3 = initial + 2 retries) and
@@ -72,7 +84,11 @@ final class WorkerClient
             throw WorkerException::fromResponse($response);
         }
 
-        return $response->json()
-            ?? throw new WorkerException('Worker returned an empty response body.', $response->status());
+        $json = $response->json();
+        if (! is_array($json)) {
+            throw new WorkerException('Worker returned an empty response body.', $response->status());
+        }
+
+        return $json;
     }
 }

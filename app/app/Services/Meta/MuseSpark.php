@@ -3,6 +3,8 @@
 namespace App\Services\Meta;
 
 use App\Exceptions\MuseSparkException;
+use App\Models\Shop;
+use App\Services\Orders\CatalogSnapshot;
 use App\Services\Prompts;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
@@ -42,7 +44,7 @@ final class MuseSpark
 
     /**
      * @param  list<string>  $cropPaths  absolute paths or shared-storage-relative
-     * @return array{items: array<int, array>, raw: list<array>, retries: list<int>, solos: list<int>}
+     * @return array{items: array<int, array<string, mixed>>, raw: list<array<string, mixed>>, retries: list<int>, solos: list<int>}
      */
     public function readCrops(array $cropPaths): array
     {
@@ -53,7 +55,7 @@ final class MuseSpark
             throw new MuseSparkException('MODEL_API_KEY is not configured.');
         }
 
-        $paths = array_map($this->resolve(...), array_values($cropPaths));
+        $paths = array_map($this->resolve(...), $cropPaths);
         foreach ($paths as $path) {
             if (! is_file($path)) {
                 throw new MuseSparkException("Crop not found: {$path}.");
@@ -78,7 +80,13 @@ final class MuseSpark
         $solos = [];
         $offset = 0;
         foreach ($batches as $index => $batch) {
-            $raw = $this->rawBody($responses["batch{$index}"], $index);
+            $pooled = $responses["batch{$index}"];
+            if ($pooled instanceof \Throwable) {
+                throw new MuseSparkException(
+                    "Muse Spark batch {$index} failed: {$pooled->getMessage()}.", 0, $pooled
+                );
+            }
+            $raw = $this->rawBody($pooled, "batch {$index}");
             $raws[] = $raw;
             try {
                 $keyed = $this->items($raw, count($batch), $index);
@@ -97,12 +105,54 @@ final class MuseSpark
     }
 
     /**
+     * Parse a customer order with muse-spark-1.3 (spec contract 2).
+     *
+     * Ported from spikes/parse_order.py: the shop's catalog table goes first
+     * in the system message so prompt caching reuses it across messages,
+     * then the versioned parse_order instructions; product_id's "<live ids>"
+     * enum placeholder is replaced with the shop's real catalog ids plus
+     * "none". The user message carries the text (a typed message or voice
+     * transcript) and/or the list photo with EXIF rotation fixed. Audio
+     * transcription is not part of this port; callers pass transcripts as
+     * $text. Prices are never read from the model; PHP prices the lines.
+     *
+     * @param  string|null  $imagePath  absolute path or shared-storage-relative
+     * @return array{parsed: array<string, mixed>, raw: array<string, mixed>}
+     */
+    public function parseOrder(Shop $shop, ?string $text, ?string $imagePath): array
+    {
+        $text = trim((string) $text);
+        if ($text === '' && $imagePath === null) {
+            throw new MuseSparkException('parseOrder needs text, an image, or both.');
+        }
+        if ($this->apiKey === '') {
+            throw new MuseSparkException('MODEL_API_KEY is not configured.');
+        }
+
+        $snapshot = new CatalogSnapshot($shop->id);
+        $payload = $this->orderPayload($snapshot, $text, $imagePath);
+
+        $response = Http::timeout($this->timeout)
+            ->withToken($this->apiKey)
+            ->post($this->url(), $payload);
+        $raw = $this->rawBody($response, 'parse_order');
+
+        $content = $raw['choices'][0]['message']['content'] ?? null;
+        $parsed = is_string($content) ? json_decode($content, true) : null;
+        if (! is_array($parsed)) {
+            throw new MuseSparkException('Muse Spark parse_order returned an unexpected payload.');
+        }
+
+        return ['parsed' => $parsed, 'raw' => $raw];
+    }
+
+    /**
      * Re-read one failed batch: whole batch once more, then image by image.
      *
      * @param  list<string>  $batch  absolute crop paths
-     * @param  list<array>  $raws
+     * @param  list<array<string, mixed>>  $raws
      * @param  list<int>  $solos
-     * @return array<int, array>
+     * @return array<int, array<string, mixed>>
      */
     private function recoverBatch(array $batch, int $index, array &$raws, array &$solos): array
     {
@@ -115,7 +165,7 @@ final class MuseSpark
         }
         $solos[] = $index;
         $keyed = [];
-        foreach (array_values($batch) as $i => $path) {
+        foreach ($batch as $i => $path) {
             $solo = $this->postBatch([$path], $index);
             $raws[] = $solo;
             $keyed[$i + 1] = $this->soloItem($solo, $index, $i + 1);
@@ -124,16 +174,23 @@ final class MuseSpark
         return $keyed;
     }
 
-    /** @param  list<string>  $batch */
+    /**
+     * @param  list<string>  $batch
+     * @return array<string, mixed>
+     */
     private function postBatch(array $batch, int $index): array
     {
         $response = Http::timeout($this->timeout)
             ->withToken($this->apiKey)
             ->post($this->url(), $this->payload($batch));
 
-        return $this->rawBody($response, $index);
+        return $this->rawBody($response, "batch {$index}");
     }
 
+    /**
+     * @param  array<string, mixed>  $raw
+     * @return array<string, mixed>
+     */
     private function soloItem(array $raw, int $batch, int $position): array
     {
         $content = $raw['choices'][0]['message']['content'] ?? null;
@@ -154,10 +211,14 @@ final class MuseSpark
         return $this->baseUrl.'/chat/completions';
     }
 
+    /**
+     * @param  list<string>  $batch
+     * @return array<string, mixed>
+     */
     private function payload(array $batch): array
     {
         $content = [];
-        foreach (array_values($batch) as $i => $path) {
+        foreach ($batch as $i => $path) {
             $bytes = file_get_contents($path);
             if ($bytes === false) {
                 throw new MuseSparkException("Could not read crop: {$path}.");
@@ -182,21 +243,26 @@ final class MuseSpark
         ];
     }
 
-    private function rawBody(Response $response, int $batch): array
+    /** @return array<string, mixed> */
+    private function rawBody(Response $response, string $what): array
     {
         if ($response->failed()) {
             throw new MuseSparkException(
-                "Muse Spark batch {$batch} failed with HTTP {$response->status()}: {$this->errorExcerpt($response)}"
+                "Muse Spark {$what} failed with HTTP {$response->status()}: {$this->errorExcerpt($response)}"
             );
         }
         $raw = $response->json();
         if (! is_array($raw)) {
-            throw new MuseSparkException("Muse Spark batch {$batch} returned an empty response.");
+            throw new MuseSparkException("Muse Spark {$what} returned an empty response.");
         }
 
         return $raw;
     }
 
+    /**
+     * @param  array<string, mixed>  $raw
+     * @return array<int, array<string, mixed>>
+     */
     private function items(array $raw, int $expected, int $batch): array
     {
         $content = $raw['choices'][0]['message']['content'] ?? null;
@@ -230,6 +296,153 @@ final class MuseSpark
         }
 
         return strlen($message) > 500 ? substr($message, 0, 500).'...' : $message;
+    }
+
+    /** @return array<string, mixed> */
+    private function orderPayload(CatalogSnapshot $snapshot, string $text, ?string $imagePath): array
+    {
+        $table = $snapshot->table();
+        $instructions = Prompts::text('parse_order');
+        $system = $table === '' ? $instructions : $table."\n\n".$instructions;
+
+        // PHP arrays copy on write, so this leaves the cached template alone.
+        $schema = Prompts::schema('parse_order');
+        $schema['properties']['lines']['items']['properties']['product_id']['enum'] =
+            [...$snapshot->productIds(), 'none'];
+
+        $content = [];
+        if ($text !== '') {
+            $content[] = ['type' => 'text', 'text' => "Customer order:\n{$text}"];
+        }
+        if ($imagePath !== null) {
+            $content[] = [
+                'type' => 'text',
+                'text' => "Read the customer's handwritten order in this photo and match each item to the catalog.",
+            ];
+            $content[] = [
+                'type' => 'image_url',
+                'image_url' => ['url' => $this->imageDataUrl($imagePath)],
+            ];
+        }
+
+        return [
+            'model' => self::MODEL,
+            'messages' => [
+                ['role' => 'system', 'content' => $system],
+                ['role' => 'user', 'content' => $content],
+            ],
+            'response_format' => [
+                'type' => 'json_schema',
+                'json_schema' => ['name' => 'parse_order', 'schema' => $schema],
+            ],
+        ];
+    }
+
+    /**
+     * Image bytes with EXIF rotation applied, as a JPEG data URL.
+     *
+     * Mirrors the spike's Pillow exif_transpose: the image is rotated into
+     * its upright orientation and re-encoded at quality 92. Bytes GD cannot
+     * decode are sent as-is so an unusual format never breaks the call.
+     */
+    private function imageDataUrl(string $path): string
+    {
+        $resolved = $this->resolve($path);
+        $bytes = is_file($resolved) ? file_get_contents($resolved) : false;
+        if ($bytes === false) {
+            throw new MuseSparkException("Image not found: {$resolved}.");
+        }
+
+        $fixed = $this->orientedJpeg($resolved, $bytes);
+
+        return 'data:image/jpeg;base64,'.base64_encode($fixed ?? $bytes);
+    }
+
+    private function orientedJpeg(string $path, string $bytes): ?string
+    {
+        if (! function_exists('imagecreatefromstring')) {
+            return null;
+        }
+        $image = @imagecreatefromstring($bytes);
+        if ($image === false) {
+            return null;
+        }
+
+        $oriented = $this->applyExifOrientation($path, $image);
+        if ($oriented !== $image) {
+            imagedestroy($image);
+            $image = $oriented;
+        }
+
+        $flat = imagecreatetruecolor(imagesx($image), imagesy($image));
+        if ($flat === false) {
+            imagedestroy($image);
+
+            return null;
+        }
+        $white = imagecolorallocate($flat, 255, 255, 255);
+        if ($white === false) {
+            imagedestroy($flat);
+            imagedestroy($image);
+
+            return null;
+        }
+        imagefill($flat, 0, 0, $white);
+        imagecopy($flat, $image, 0, 0, 0, 0, imagesx($image), imagesy($image));
+        imagedestroy($image);
+
+        ob_start();
+        $ok = imagejpeg($flat, null, 92);
+        $jpeg = ob_get_clean();
+        imagedestroy($flat);
+
+        return $ok && is_string($jpeg) && $jpeg !== '' ? $jpeg : null;
+    }
+
+    private function applyExifOrientation(string $path, \GdImage $image): \GdImage
+    {
+        $orientation = 1;
+        if (function_exists('exif_read_data')) {
+            $exif = @exif_read_data($path);
+            $orientation = is_array($exif) ? (int) ($exif['Orientation'] ?? 1) : 1;
+        }
+
+        // imagerotate() turns counter-clockwise for positive angles.
+        switch ($orientation) {
+            case 2:
+                imageflip($image, IMG_FLIP_HORIZONTAL);
+
+                return $image;
+            case 3:
+                $rotated = imagerotate($image, 180, 0);
+                break;
+            case 4:
+                imageflip($image, IMG_FLIP_VERTICAL);
+
+                return $image;
+            case 5:
+                $rotated = imagerotate($image, 270, 0);
+                if ($rotated !== false) {
+                    imageflip($rotated, IMG_FLIP_HORIZONTAL);
+                }
+                break;
+            case 6:
+                $rotated = imagerotate($image, -90, 0);
+                break;
+            case 7:
+                $rotated = imagerotate($image, 90, 0);
+                if ($rotated !== false) {
+                    imageflip($rotated, IMG_FLIP_HORIZONTAL);
+                }
+                break;
+            case 8:
+                $rotated = imagerotate($image, 90, 0);
+                break;
+            default:
+                return $image;
+        }
+
+        return $rotated === false ? $image : $rotated;
     }
 
     private function resolve(string $path): string

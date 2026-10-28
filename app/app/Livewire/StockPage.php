@@ -4,6 +4,9 @@ namespace App\Livewire;
 
 use App\Models\Product;
 use App\Models\Shop;
+use App\Support\Money;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -45,7 +48,7 @@ class StockPage extends Component
 
         $product->price = $validated['editPrice'];
         if ((int) $validated['editQty'] !== (int) $product->stock_qty) {
-            $product->stock_qty = (int) $validated['editQty'];
+            $product->stock_qty = max(0, (int) $validated['editQty']);
             $product->stock_is_estimate = false;
         }
         $product->save();
@@ -53,7 +56,7 @@ class StockPage extends Component
         $this->cancelEdit();
     }
 
-    public function render()
+    public function render(): View
     {
         $products = $this->shopProducts()
             ->when(trim($this->search) !== '', function ($query): void {
@@ -75,7 +78,7 @@ class StockPage extends Component
 
     public static function money(float $value): string
     {
-        return '৳'.rtrim(rtrim(number_format($value, 2), '0'), '.');
+        return Money::format($value);
     }
 
     public static function sizeFor(Product $product): string
@@ -87,7 +90,8 @@ class StockPage extends Component
         return 'size unknown';
     }
 
-    private function shopProducts()
+    /** @return Builder<Product> */
+    private function shopProducts(): Builder
     {
         return Product::query()
             ->where('shop_id', Shop::query()->value('id'))

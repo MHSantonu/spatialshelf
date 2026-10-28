@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-#[Fillable(['shop_id', 'customer_id', 'status', 'source_type', 'raw_input_path', 'transcript', 'total', 'confirmed_at'])]
+#[Fillable(['shop_id', 'customer_id', 'status', 'source_type', 'raw_input_path', 'transcript', 'context', 'total', 'confirmed_at'])]
 class Order extends Model
 {
     /** @use HasFactory<OrderFactory> */
@@ -24,6 +24,7 @@ class Order extends Model
     {
         return [
             'status' => OrderStatus::class,
+            'context' => 'array',
             'total' => 'decimal:2',
             'confirmed_at' => 'datetime',
         ];

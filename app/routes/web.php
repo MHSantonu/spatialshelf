@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
 
+Route::livewire('try', App\Livewire\TryPage::class)->name('try');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::redirect('dashboard', 'scan')->name('dashboard');
     Route::livewire('scan', App\Livewire\ScanPage::class)->name('scan');

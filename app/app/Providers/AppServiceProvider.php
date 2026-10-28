@@ -2,9 +2,11 @@
 
 namespace App\Providers;
 
+use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\Shop;
 use App\Observers\ProductImageObserver;
+use App\Observers\ProductObserver;
 use App\Services\Meta\MetaClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
@@ -32,6 +34,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         ProductImage::observe(ProductImageObserver::class);
+        Product::observe(ProductObserver::class);
 
         View::composer('layouts.mobile', function ($view): void {
             $view->with('shopName', Shop::query()->value('name') ?? config('app.name'));
