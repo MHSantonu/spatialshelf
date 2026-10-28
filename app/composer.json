@@ -16,7 +16,8 @@
         "laravel/tinker": "^3.0",
         "livewire/blaze": "^1.0",
         "livewire/flux": "^2.13.1",
-        "livewire/livewire": "^4.1"
+        "livewire/livewire": "^4.1",
+        "openai-php/client": "^0.21.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.24",
@@ -43,6 +44,7 @@
         }
     },
     "scripts": {
+        "serve": "php -d upload_max_filesize=200M -d post_max_size=200M -d max_execution_time=600 -d max_input_time=600 artisan serve",
         "setup": [
             "composer install",
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
@@ -53,7 +55,7 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1\" \"npm run dev\" --names='server,queue,vite'"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \"composer serve\" \"php artisan queue:listen --tries=1\" \"npm run dev\" --names='server,queue,vite'"
         ],
         "lint": [
             "pint --parallel"
