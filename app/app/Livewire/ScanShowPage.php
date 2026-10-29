@@ -56,6 +56,8 @@ class ScanShowPage extends Component
                 : 0,
             'itemCount' => $this->scan->items()->count(),
             'knownCount' => $this->scan->items()->whereNotNull('matched_product_id')->count(),
+            'memorySeconds' => $stats['timings']['memory'] ?? null,
+            'readSeconds' => $stats['timings']['read'] ?? null,
             'error' => $stats['error'] ?? null,
             'hasOverlay' => $this->scan->overlaySlug() !== null,
             'finished' => in_array($this->scan->status, [ScanStatus::Completed, ScanStatus::Failed], true),

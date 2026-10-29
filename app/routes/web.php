@@ -21,8 +21,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('product-images/{image}', [App\Http\Controllers\ScanMediaController::class, 'image'])->name('product-images.show');
     Route::get('scans/{scan}/sam/{name}', [App\Http\Controllers\ScanMediaController::class, 'sam'])
         ->where('name', '[A-Za-z0-9_.-]+')->name('scans.sam');
+    Route::post('scan-items/{scanItem}/voice', [App\Http\Controllers\VoicePriceController::class, 'store'])->name('scan-items.voice');
+    Route::post('scans/{scan}/voice-all', [App\Http\Controllers\VoicePriceController::class, 'storeAll'])->name('scans.voice-all');
     Route::livewire('stock', App\Livewire\StockPage::class)->name('stock');
     Route::livewire('orders', App\Livewire\OrdersPage::class)->name('orders');
+    Route::livewire('orders/{order}', App\Livewire\OrderDetailPage::class)->name('orders.show');
+    Route::get('orders/{order}/input', [App\Http\Controllers\OrderMediaController::class, 'input'])->name('orders.input');
+    Route::post('orders/{order}/packed', App\Http\Controllers\OrderPackController::class)->name('orders.packed');
 });
 
 require __DIR__.'/settings.php';

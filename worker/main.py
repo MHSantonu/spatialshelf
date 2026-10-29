@@ -7,6 +7,7 @@ Config comes from the repo-root .env (MODEL_API_KEY, SHARED_STORAGE_PATH).
 Every endpoint takes paths relative to SHARED_STORAGE_PATH.
 """
 
+import asyncio
 import os
 import re
 import shutil
@@ -16,13 +17,19 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from PIL import UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from services.audio import AudioError, to_wav
 from services.crops import cut_crops
 from services.embed import EMBED_DIM, embed, ensure_model
-from services.sam import SamError, close_client as close_sam_client, segment_scan
+from services.sam import (
+    SamError,
+    close_client as close_sam_client,
+    detect_largest_box,
+    padded_box,
+    segment_scan,
+)
 from services.video import VideoError, prepare_scan
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -227,16 +234,24 @@ def scan_crops(body: CropsRequest):
 
 class EmbedRequest(BaseModel):
     image_path: str = Field(min_length=1)
+    crop_largest_object: bool = False
 
 
 class EmbedResponse(BaseModel):
     image_path: str
     embedding: list[float]
     dim: int
+    cropped: bool = False
+    box: list[int] | None = None
+
+
+def _load_rgb(path: Path):
+    with Image.open(path) as handle:
+        return handle.convert("RGB")
 
 
 @app.post("/embed", response_model=EmbedResponse)
-def post_embed(body: EmbedRequest):
+async def post_embed(body: EmbedRequest):
     root = SHARED_STORAGE_PATH.resolve()
     src = (root / body.image_path).resolve()
     if src != root and root not in src.parents:
@@ -248,13 +263,38 @@ def post_embed(body: EmbedRequest):
         raise HTTPException(
             status_code=404, detail=f"Image not found: {body.image_path}"
         )
+    box = None
+    cropped = False
+    image = src
+    if body.crop_largest_object:
+        try:
+            found = await detect_largest_box(src)
+        except SamError as error:
+            raise HTTPException(status_code=502, detail=str(error))
+        if found is not None:
+            try:
+                pil = await asyncio.to_thread(_load_rgb, src)
+            except (UnidentifiedImageError, OSError):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Not a readable image: {body.image_path}",
+                )
+            box = padded_box(found["box"], pil.width, pil.height)
+            image = pil.crop(box)
+            cropped = True
     try:
-        vector = embed(src)
+        vector = await asyncio.to_thread(embed, image)
     except (UnidentifiedImageError, OSError) as error:
         raise HTTPException(
             status_code=422, detail=f"Not a readable image: {body.image_path}"
         )
-    return {"image_path": body.image_path, "embedding": vector, "dim": EMBED_DIM}
+    return {
+        "image_path": body.image_path,
+        "embedding": vector,
+        "dim": EMBED_DIM,
+        "cropped": cropped,
+        "box": box,
+    }
 
 
 class ToWavRequest(BaseModel):

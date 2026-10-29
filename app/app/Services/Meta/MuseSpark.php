@@ -147,6 +147,199 @@ final class MuseSpark
     }
 
     /**
+     * Sort one customer photo: a written list, a single product, or other.
+     *
+     * Anything outside the three kinds (including an undecodable payload)
+     * fails open to 'list', which keeps the previous parse-everything path.
+     *
+     * @return array{kind: string, raw: array<string, mixed>}
+     */
+    public function classifyImage(string $imagePath): array
+    {
+        if ($this->apiKey === '') {
+            throw new MuseSparkException('MODEL_API_KEY is not configured.');
+        }
+
+        $response = Http::timeout($this->timeout)
+            ->withToken($this->apiKey)
+            ->post($this->url(), [
+                'model' => self::MODEL,
+                'messages' => [
+                    ['role' => 'system', 'content' => Prompts::text('classify_image')],
+                    ['role' => 'user', 'content' => [
+                        ['type' => 'text', 'text' => 'What does this photo show?'],
+                        [
+                            'type' => 'image_url',
+                            'image_url' => ['url' => $this->imageDataUrl($imagePath)],
+                        ],
+                    ]],
+                ],
+                'response_format' => [
+                    'type' => 'json_schema',
+                    'json_schema' => ['name' => 'classify_image', 'schema' => Prompts::schema('classify_image')],
+                ],
+            ]);
+        $raw = $this->rawBody($response, 'classify_image');
+
+        $content = $raw['choices'][0]['message']['content'] ?? null;
+        $parsed = is_string($content) ? json_decode($content, true) : null;
+        $kind = is_array($parsed) ? ($parsed['kind'] ?? null) : null;
+        if (! in_array($kind, ['list', 'single_product', 'other'], true)) {
+            $kind = 'list';
+        }
+
+        return ['kind' => $kind, 'raw' => $raw];
+    }
+
+    /**
+     * Read one spoken price with muse-spark-1.3: English, Bangla or Banglish
+     * numbers ("chhoy sho ponchash" = 650, "dedh kg" = 1.5 kg) into a price
+     * and an optional pack size. Nulls pass through untouched: the model
+     * never guesses, and neither does PHP.
+     *
+     * @return array{price: float|null, size_value: float|null, size_unit: string, confidence: float|null, raw: array<string, mixed>}
+     */
+    public function parseVoicePrice(string $transcript, ?string $productName = null): array
+    {
+        $transcript = trim($transcript);
+        if ($transcript === '') {
+            throw new MuseSparkException('parseVoicePrice needs a transcript.');
+        }
+        if ($this->apiKey === '') {
+            throw new MuseSparkException('MODEL_API_KEY is not configured.');
+        }
+
+        $heard = "Spoken price: {$transcript}";
+        if (is_string($productName) && trim($productName) !== '') {
+            $heard = 'Product: '.trim($productName)."\n{$heard}";
+        }
+        $response = Http::timeout($this->timeout)
+            ->withToken($this->apiKey)
+            ->post($this->url(), [
+                'model' => self::MODEL,
+                'messages' => [
+                    ['role' => 'system', 'content' => Prompts::text('voice_price')],
+                    ['role' => 'user', 'content' => $heard],
+                ],
+                'response_format' => [
+                    'type' => 'json_schema',
+                    'json_schema' => ['name' => 'voice_price', 'schema' => Prompts::schema('voice_price')],
+                ],
+            ]);
+        $raw = $this->rawBody($response, 'voice_price');
+
+        $content = $raw['choices'][0]['message']['content'] ?? null;
+        $parsed = is_string($content) ? json_decode($content, true) : null;
+        if (! is_array($parsed)) {
+            throw new MuseSparkException('Muse Spark voice_price returned an unexpected payload.');
+        }
+
+        return [
+            'price' => self::voiceNumber($parsed['price'] ?? null),
+            'size_value' => self::voiceNumber($parsed['size_value'] ?? null),
+            'size_unit' => self::voiceUnit($parsed['size_unit'] ?? null),
+            'confidence' => self::voiceNumber($parsed['confidence'] ?? null),
+            'raw' => $raw,
+        ];
+    }
+
+    /**
+     * Read one long spoken price run ("Horlicks six fifty, Tang four
+     * fifty") into per-card prices. Cards map by scan-item id with the
+     * same live-id enum trick as parse_order; model rows for unknown ids
+     * are dropped, "none" rows skipped.
+     *
+     * @param  list<array{id: int, name: string}>  $cards
+     * @return array{items: list<array{item_id: int, price: float|null, size_value: float|null, size_unit: string, confidence: float|null}>, raw: array<string, mixed>}
+     */
+    public function parseVoicePrices(string $transcript, array $cards): array
+    {
+        $transcript = trim($transcript);
+        if ($transcript === '') {
+            throw new MuseSparkException('parseVoicePrices needs a transcript.');
+        }
+        if ($cards === []) {
+            throw new MuseSparkException('parseVoicePrices needs at least one card.');
+        }
+        if ($this->apiKey === '') {
+            throw new MuseSparkException('MODEL_API_KEY is not configured.');
+        }
+
+        $ids = [];
+        $lines = [];
+        foreach ($cards as $card) {
+            $id = (string) $card['id'];
+            $ids[] = $id;
+            $lines[] = "{$id}: ".trim((string) $card['name']);
+        }
+        // PHP arrays copy on write, so this leaves the cached template alone.
+        $schema = Prompts::schema('voice_prices');
+        $schema['properties']['items']['items']['properties']['item_id']['enum'] = [...$ids, 'none'];
+
+        $response = Http::timeout($this->timeout)
+            ->withToken($this->apiKey)
+            ->post($this->url(), [
+                'model' => self::MODEL,
+                'messages' => [
+                    ['role' => 'system', 'content' => "Cards:\n".implode("\n", $lines)."\n\n".Prompts::text('voice_prices')],
+                    ['role' => 'user', 'content' => "Spoken prices: {$transcript}"],
+                ],
+                'response_format' => [
+                    'type' => 'json_schema',
+                    'json_schema' => ['name' => 'voice_prices', 'schema' => $schema],
+                ],
+            ]);
+        $raw = $this->rawBody($response, 'voice_prices');
+
+        $content = $raw['choices'][0]['message']['content'] ?? null;
+        $parsed = is_string($content) ? json_decode($content, true) : null;
+        $rows = is_array($parsed) ? ($parsed['items'] ?? null) : null;
+        if (! is_array($rows)) {
+            throw new MuseSparkException('Muse Spark voice_prices returned an unexpected payload.');
+        }
+        $known = array_fill_keys($ids, true);
+        $items = [];
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $id = trim((string) ($row['item_id'] ?? 'none'));
+            if ($id === 'none' || ! isset($known[$id]) || isset($items[$id])) {
+                continue;
+            }
+            $items[$id] = [
+                'item_id' => (int) $id,
+                'price' => self::voiceNumber($row['price'] ?? null),
+                'size_value' => self::voiceNumber($row['size_value'] ?? null),
+                'size_unit' => self::voiceUnit($row['size_unit'] ?? null),
+                'confidence' => self::voiceNumber($row['confidence'] ?? null),
+            ];
+        }
+
+        return ['items' => array_values($items), 'raw' => $raw];
+    }
+
+    private static function voiceNumber(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (! is_numeric($value)) {
+            return null;
+        }
+        $number = (float) $value;
+
+        return $number < 0 ? null : $number;
+    }
+
+    private static function voiceUnit(mixed $value): string
+    {
+        $unit = is_string($value) ? strtolower(trim($value)) : '';
+
+        return in_array($unit, ['g', 'kg', 'ml', 'l', 'pcs'], true) ? $unit : 'unknown';
+    }
+
+    /**
      * Re-read one failed batch: whole batch once more, then image by image.
      *
      * @param  list<string>  $batch  absolute crop paths

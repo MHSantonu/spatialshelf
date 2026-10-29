@@ -40,8 +40,9 @@ final class VoiceTranscriber
 
     /**
      * @param  string  $path  audio path relative to shared storage
+     * @param  list<string>  $extraKeywords  biased first, e.g. price words plus the card's product name
      */
-    public function transcribe(string $path, Shop $shop): string
+    public function transcribe(string $path, Shop $shop, array $extraKeywords = []): string
     {
         if ($this->apiKey === '') {
             throw new VoiceTranscriberException('MODEL_API_KEY is not configured.');
@@ -56,7 +57,7 @@ final class VoiceTranscriber
 
         $response = Http::timeout($this->timeout)
             ->withToken($this->apiKey)
-            ->attach('request', json_encode($this->requestPayload($shop), JSON_THROW_ON_ERROR), null, ['Content-Type' => 'application/json'])
+            ->attach('request', json_encode($this->requestPayload($shop, $extraKeywords), JSON_THROW_ON_ERROR), null, ['Content-Type' => 'application/json'])
             ->attach('audio', $bytes, basename($resolved), ['Content-Type' => 'audio/wav'])
             ->post($this->url());
 
@@ -74,20 +75,26 @@ final class VoiceTranscriber
         return $transcript;
     }
 
-    /** @return array<string, mixed> */
-    private function requestPayload(Shop $shop): array
+    /**
+     * @param  list<string>  $extraKeywords
+     * @return array<string, mixed>
+     */
+    private function requestPayload(Shop $shop, array $extraKeywords): array
     {
         return [
             'model' => self::MODEL,
             'mode' => 'PUSH_TO_TALK',
             'audioEncoding' => 'WAV',
             'languageBias' => ['English', 'Bengali'],
-            'keywords' => $this->keywords($shop),
+            'keywords' => $this->keywords($shop, $extraKeywords),
         ];
     }
 
-    /** @return list<string> */
-    private function keywords(Shop $shop): array
+    /**
+     * @param  list<string>  $extraKeywords
+     * @return list<string>
+     */
+    private function keywords(Shop $shop, array $extraKeywords = []): array
     {
         $products = Product::query()
             ->select(['name', 'brand'])
@@ -109,7 +116,15 @@ final class VoiceTranscriber
             }
         }
 
-        return array_slice(array_values(array_unique([...$names, ...$brands])), 0, self::MAX_KEYWORDS);
+        $extra = [];
+        foreach ($extraKeywords as $keyword) {
+            $keyword = trim((string) $keyword);
+            if ($keyword !== '') {
+                $extra[] = $keyword;
+            }
+        }
+
+        return array_slice(array_values(array_unique([...$extra, ...$names, ...$brands])), 0, self::MAX_KEYWORDS);
     }
 
     /** @param  array<string, mixed>  $raw */

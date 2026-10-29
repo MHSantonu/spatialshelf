@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item_id": {"type": "string", "enum": ["<live ids>", "none"]},
+          "price": {"type": ["number", "null"]},
+          "size_value": {"type": ["number", "null"]},
+          "size_unit": {"type": "string", "enum": ["g", "kg", "ml", "l", "pcs", "unknown"]},
+          "confidence": {"type": ["number", "null"]}
+        },
+        "required": ["item_id", "price", "size_value", "size_unit", "confidence"]
+      }
+    }
+  },
+  "required": ["items"]
+}

@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "price": {"type": ["number", "null"]},
+    "size_value": {"type": ["number", "null"]},
+    "size_unit": {"type": "string", "enum": ["g", "kg", "ml", "l", "pcs", "unknown"]},
+    "confidence": {"type": ["number", "null"]}
+  },
+  "required": ["price", "size_value", "size_unit", "confidence"]
+}

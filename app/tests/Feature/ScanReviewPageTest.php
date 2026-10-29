@@ -259,6 +259,164 @@ class ScanReviewPageTest extends TestCase
         $this->assertSame(ScanItemDecision::Pending, $clear->fresh()->decision);
     }
 
+    public function test_confirm_all_known_confirms_only_known_and_keeps_counts_by_default(): void
+    {
+        $shop = Shop::factory()->create();
+        $product = Product::factory()->create([
+            'shop_id' => $shop->id, 'price' => 45, 'stock_qty' => 10, 'stock_is_estimate' => false,
+        ]);
+        $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+        $known = $this->makeItem($scan, [
+            'matched_product_id' => $product->id, 'est_qty' => 4, 'shelf_row' => 2, 'shelf_order' => 5,
+        ]);
+        $unknown = $this->makeItem($scan, ['shelf_order' => 2, 'extracted' => $this->extracted('Second')]);
+        $this->actingAs(User::factory()->create());
+
+        Livewire::test(ScanReviewPage::class, ['scan' => $scan])
+            ->assertSee('Confirm all known (1)')
+            ->assertSee('Update counts')
+            ->call('confirmAllKnown')
+            ->assertSee('Second');
+
+        $this->assertSame(ScanItemDecision::Confirmed, $known->fresh()->decision);
+        $this->assertSame(ScanItemDecision::Pending, $unknown->fresh()->decision);
+        $fresh = $product->fresh();
+        $this->assertSame('45.00', $fresh->price);
+        $this->assertSame(10, $fresh->stock_qty);
+        $this->assertFalse($fresh->stock_is_estimate);
+        $this->assertSame(2, $fresh->shelf_row);
+        $this->assertSame(5, $fresh->shelf_order);
+        $this->assertSame(1, ProductImage::query()->where('product_id', $product->id)->count());
+    }
+
+    public function test_confirm_all_known_updates_counts_when_ticked(): void
+    {
+        $shop = Shop::factory()->create();
+        $product = Product::factory()->create([
+            'shop_id' => $shop->id, 'price' => 45, 'stock_qty' => 10, 'stock_is_estimate' => false,
+        ]);
+        $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+        $known = $this->makeItem($scan, ['matched_product_id' => $product->id, 'est_qty' => 4]);
+        $this->actingAs(User::factory()->create());
+
+        Livewire::test(ScanReviewPage::class, ['scan' => $scan])
+            ->set('updateCounts', true)
+            ->call('confirmAllKnown')
+            ->assertSee('All done.');
+
+        $this->assertSame(ScanItemDecision::Confirmed, $known->fresh()->decision);
+        $fresh = $product->fresh();
+        $this->assertSame(4, $fresh->stock_qty);
+        $this->assertTrue($fresh->stock_is_estimate);
+    }
+
+    public function test_confirm_all_known_hides_when_nothing_is_known(): void
+    {
+        $shop = Shop::factory()->create();
+        $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+        $this->makeItem($scan);
+        $this->actingAs(User::factory()->create());
+
+        Livewire::test(ScanReviewPage::class, ['scan' => $scan])
+            ->assertDontSee('Confirm all known')
+            ->assertDontSee('Update counts');
+    }
+
+    public function test_mic_button_posts_to_the_voice_endpoint(): void
+    {
+        $shop = Shop::factory()->create();
+        $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+        $item = $this->makeItem($scan);
+        $this->actingAs(User::factory()->create());
+
+        Livewire::test(ScanReviewPage::class, ['scan' => $scan])
+            ->assertSee('Hold to say the price')
+            ->assertSee(route('scan-items.voice', $item, absolute: false), false)
+            ->assertSee('Price all by voice');
+    }
+
+    public function test_apply_voice_fills_price_size_and_transcript(): void
+    {
+        $shop = Shop::factory()->create();
+        $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+        $item = $this->makeItem($scan);
+        $this->actingAs(User::factory()->create());
+
+        Livewire::test(ScanReviewPage::class, ['scan' => $scan])
+            ->call('applyVoice', $item->id, 650.0, 1.5, 'kg', 'chhoy sho ponchash')
+            ->assertSet('price', '650')
+            ->assertSet('form.size_value', 1.5)
+            ->assertSet('form.size_unit', 'kg')
+            ->assertSet('voiceFilled', true)
+            ->assertSee('Heard:')
+            ->assertSee('chhoy sho ponchash')
+            ->call('startEdit')
+            ->assertSet('form.name', 'Tang Orange')
+            ->assertSet('form.size_value', 1.5)
+            ->assertSet('form.size_unit', 'kg');
+    }
+
+    public function test_voice_values_save_only_on_swipe(): void
+    {
+        $shop = Shop::factory()->create();
+        $product = Product::factory()->create(['shop_id' => $shop->id, 'price' => 10, 'stock_qty' => 5]);
+        $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+        $item = $this->makeItem($scan, ['matched_product_id' => $product->id]);
+        $this->actingAs(User::factory()->create());
+
+        $test = Livewire::test(ScanReviewPage::class, ['scan' => $scan])
+            ->call('applyVoice', $item->id, 650.0, null, null, 'six fifty');
+
+        $this->assertSame('10.00', $product->fresh()->price);
+        $this->assertSame(ScanItemDecision::Pending, $item->fresh()->decision);
+
+        $test->call('confirm');
+
+        $this->assertSame('650.00', $product->fresh()->price);
+        $this->assertSame(ScanItemDecision::Confirmed, $item->fresh()->decision);
+    }
+
+    public function test_voice_for_a_later_card_applies_when_it_becomes_current(): void
+    {
+        $shop = Shop::factory()->create();
+        $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+        $first = $this->makeItem($scan, ['shelf_order' => 1, 'extracted' => $this->extracted('First')]);
+        $second = $this->makeItem($scan, ['shelf_order' => 2, 'extracted' => $this->extracted('Second')]);
+        $this->actingAs(User::factory()->create());
+
+        Livewire::test(ScanReviewPage::class, ['scan' => $scan])
+            ->call('applyVoice', $second->id, 450.0, null, null, 'tang four fifty')
+            ->assertSee('First')
+            ->assertDontSee('tang four fifty')
+            ->set('price', '10')
+            ->call('confirm')
+            ->assertSet('price', '450')
+            ->assertSee('tang four fifty');
+
+        $this->assertSame(ScanItemDecision::Pending, $second->fresh()->decision);
+    }
+
+    public function test_price_all_mode_stages_pending_cards(): void
+    {
+        $shop = Shop::factory()->create();
+        $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+        $first = $this->makeItem($scan, ['shelf_order' => 1, 'extracted' => $this->extracted('Horlicks')]);
+        $second = $this->makeItem($scan, ['shelf_order' => 2, 'extracted' => $this->extracted('Tang')]);
+        $this->actingAs(User::factory()->create());
+
+        Livewire::test(ScanReviewPage::class, ['scan' => $scan])
+            ->call('startPriceAll')
+            ->assertSee('Hold to record')
+            ->call('applyVoiceAll', [
+                ['item_id' => $first->id, 'price' => 650, 'size_value' => null, 'size_unit' => 'unknown'],
+                ['item_id' => $second->id, 'price' => 450, 'size_value' => 0.5, 'size_unit' => 'kg'],
+                ['item_id' => 999999, 'price' => 10, 'size_value' => null, 'size_unit' => 'unknown'],
+            ], 'Horlicks six fifty, Tang four fifty')
+            ->assertSet('pricingAll', false)
+            ->assertSet('price', '650')
+            ->assertDontSee('Hold to record');
+    }
+
     public function test_crop_route_serves_and_404s(): void
     {
         Storage::fake('shared');

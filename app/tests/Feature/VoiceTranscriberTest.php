@@ -224,6 +224,24 @@ test('transcribe throws when the WAV is missing from disk', function () {
     Http::assertNotSent(fn (Request $request) => $request->url() === 'http://meta.test/asr/transcribe');
 });
 
+test('transcribe biases extra keywords first', function () {
+    $shop = Shop::factory()->create();
+    Product::factory()->create(['shop_id' => $shop->id, 'name' => 'Tang Orange', 'brand' => 'Tang']);
+    voiceWavFile();
+    Http::fake([
+        'http://worker.test/audio/to-wav' => Http::response([
+            'audio_path' => 'a.ogg', 'wav_path' => 'voice/note.wav',
+            'sample_rate' => 24000, 'channels' => 1,
+        ]),
+        'http://meta.test/asr/transcribe' => Http::response(['transcript' => 'six fifty']),
+    ]);
+
+    voiceTranscriber()->transcribe('a.ogg', $shop, ['taka', 'Tang Orange', '']);
+
+    $keywords = json_decode(voiceParts(voiceAsrRequest())['request']['contents'], true)['keywords'];
+    expect($keywords)->toBe(['taka', 'Tang Orange', 'Tang']);
+});
+
 test('transcribe requires an API key', function () {
     Http::fake();
 

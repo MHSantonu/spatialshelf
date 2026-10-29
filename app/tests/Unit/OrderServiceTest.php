@@ -184,3 +184,30 @@ test('confirm rejects a cancelled order', function () {
     }
     expect($tang->fresh()->stock_qty)->toBe(9);
 });
+
+test('pack flips a confirmed order to packed', function () {
+    $shop = Shop::factory()->create();
+    $tang = Product::factory()->create(['shop_id' => $shop->id, 'price' => 10, 'stock_qty' => 9]);
+    $order = orderDraft($shop, [orderParsedLine('Tang', (string) $tang->id, 1)]);
+    (new OrderService)->confirm($order);
+
+    $packed = (new OrderService)->pack($order);
+
+    expect($packed->status)->toBe(OrderStatus::Packed)
+        ->and($order->fresh()->status)->toBe(OrderStatus::Packed)
+        ->and($tang->fresh()->stock_qty)->toBe(8);
+});
+
+test('pack rejects anything but a confirmed order', function () {
+    $shop = Shop::factory()->create();
+    $tang = Product::factory()->create(['shop_id' => $shop->id, 'price' => 10, 'stock_qty' => 9]);
+    $order = orderDraft($shop, [orderParsedLine('Tang', (string) $tang->id, 1)]);
+
+    try {
+        (new OrderService)->pack($order);
+        $this->fail('OrderStateException was not thrown.');
+    } catch (OrderStateException $e) {
+        expect($e->getMessage())->toContain('Only confirmed orders can be packed');
+    }
+    expect($order->fresh()->status)->toBe(OrderStatus::Draft);
+});

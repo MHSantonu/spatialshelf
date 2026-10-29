@@ -45,6 +45,39 @@ final class MemoryMatcher implements VectorIndex
         return new NearestMatch($bestId, $bestDistance);
     }
 
+    /**
+     * Best cosine distance per product, best-first, at most two.
+     *
+     * Unlike match(), this never applies the threshold: callers decide what
+     * counts as a hit, and a near-tied runner-up still matters even when it
+     * sits just past the line.
+     *
+     * @param  list<float>  $vector
+     * @return list<array{product_id: int, distance: float}>
+     */
+    public function topTwo(array $vector): array
+    {
+        /** @var array<int, float> $best */
+        $best = [];
+        foreach ($this->entries() as $entry) {
+            $distance = Vec::cosineDistance($vector, $entry['embedding']);
+            $id = $entry['product_id'];
+            if (! isset($best[$id]) || $distance < $best[$id]) {
+                $best[$id] = $distance;
+            }
+        }
+        asort($best);
+        $out = [];
+        foreach ($best as $id => $distance) {
+            $out[] = ['product_id' => $id, 'distance' => $distance];
+            if (count($out) === 2) {
+                break;
+            }
+        }
+
+        return $out;
+    }
+
     public static function bust(int $shopId): void
     {
         unset(self::$cache[$shopId]);

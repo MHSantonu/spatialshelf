@@ -210,6 +210,79 @@ async def _with_retry(call):
         return await call()
 
 
+PRODUCT_PHRASE = "product"
+
+
+def largest_box(boxes: list[dict]) -> dict | None:
+    """Box dict with the biggest area, or None when empty."""
+    best = None
+    best_area = 0
+    for box in boxes:
+        left, top, right, bottom = box["box"]
+        area = (right - left) * (bottom - top)
+        if area > best_area:
+            best_area = area
+            best = box
+    return best
+
+
+def padded_box(
+    box: list, img_width: int, img_height: int, pad: float = 0.25
+) -> list[int]:
+    """Box grown by the pad fraction per side, clamped to the image."""
+    left, top, right, bottom = box
+    pad_x = int(round((right - left) * pad))
+    pad_y = int(round((bottom - top) * pad))
+    return [
+        max(0, left - pad_x),
+        max(0, top - pad_y),
+        min(img_width, right + pad_x),
+        min(img_height, bottom + pad_y),
+    ]
+
+
+async def detect_largest_box(image_path: Path) -> dict | None:
+    """Biggest sam-3.1 box for "product" at confidence >= 0.6, or None.
+
+    One-shot call with its own client, outside the scan pipeline; used
+    to crop single-product order photos before embedding.
+    """
+    api_key = os.getenv("MODEL_API_KEY")
+    if not api_key:
+        raise SamError("MODEL_API_KEY is missing in the root .env")
+    base_url = os.getenv("META_BASE_URL", "https://api.meta.ai/v1")
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+    try:
+        data_url = await asyncio.to_thread(_data_url, image_path)
+        try:
+            result, _ = await _with_retry(
+                lambda: _image_result(client, data_url, PRODUCT_PHRASE)
+            )
+        except Exception as error:
+            raise SamError(
+                f"sam-3.1 product detect failed: {type(error).__name__}: {error}"
+            ) from error
+    finally:
+        await client.close()
+    boxes = []
+    for record in result.records:
+        if not isinstance(record, SegmentationBoxRecord):
+            continue
+        confidence = (
+            record.confidence if record.confidence is not None else 0.0
+        )
+        if confidence < MIN_CONFIDENCE:
+            continue
+        left, top = int(round(record.left)), int(round(record.top))
+        right, bottom = int(round(record.right)), int(round(record.bottom))
+        if right <= left or bottom <= top:
+            continue
+        boxes.append(
+            {"box": [left, top, right, bottom], "confidence": confidence}
+        )
+    return largest_box(boxes)
+
+
 async def _image_pair(
     client: AsyncOpenAI,
     sem: asyncio.Semaphore,

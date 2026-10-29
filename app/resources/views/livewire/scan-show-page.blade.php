@@ -19,6 +19,12 @@
     @elseif ($scan->status === \App\Enums\ScanStatus::Completed)
         <div class="mt-4 rounded-xl border border-zinc-200 p-4">
             <p class="font-semibold">Found {{ $itemCount }} products · {{ $knownCount }} already known</p>
+            @if ($knownCount > 0)
+                <p class="mt-1 text-sm text-zinc-600">{{ $knownCount }} recognised from memory — no AI needed</p>
+            @endif
+            @if ($memorySeconds !== null && $readSeconds !== null)
+                <p class="mt-1 text-sm tabular-nums text-zinc-600">Memory check {{ $memorySeconds }}s · Reading labels {{ $readSeconds }}s</p>
+            @endif
             <div class="mt-3 grid {{ $hasOverlay ? 'grid-cols-2' : 'grid-cols-1' }} gap-2">
                 <a href="{{ route('scans.review', $scan) }}" wire:navigate class="inline-flex min-h-[48px] items-center justify-center rounded-xl bg-emerald-600 px-4 font-semibold text-white hover:bg-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">Review products</a>
                 @if ($hasOverlay)

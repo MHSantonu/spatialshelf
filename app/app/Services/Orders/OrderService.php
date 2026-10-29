@@ -92,6 +92,24 @@ final class OrderService
         });
     }
 
+    public function pack(Order $order): Order
+    {
+        return DB::transaction(function () use ($order): Order {
+            $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
+            // Larastan reads the string column, but casts() makes this an enum at runtime.
+            /** @var OrderStatus $status */
+            $status = $locked->status;
+            if ($status !== OrderStatus::Confirmed) {
+                throw new OrderStateException(
+                    "Only confirmed orders can be packed (order {$locked->id} is {$status->value})."
+                );
+            }
+            $locked->update(['status' => OrderStatus::Packed]);
+
+            return $locked->refresh();
+        });
+    }
+
     public function cancel(Order $order): Order
     {
         $order->refresh();

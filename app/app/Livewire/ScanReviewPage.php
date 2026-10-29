@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use App\Actions\ConfirmScanItem;
 use App\Enums\ScanItemDecision;
+use App\Models\Product;
 use App\Models\Scan;
 use App\Models\ScanItem;
 use App\Support\Vec;
@@ -38,6 +39,17 @@ class ScanReviewPage extends Component
     public array $form = [];
 
     public bool $picking = false;
+
+    public bool $updateCounts = false;
+
+    /** @var array<int, array{price: float|null, size_value: float|null, size_unit: string|null, transcript: string|null}> */
+    public array $voicePrices = [];
+
+    public ?string $voiceTranscript = null;
+
+    public bool $voiceFilled = false;
+
+    public bool $pricingAll = false;
 
     public function mount(Scan $scan): void
     {
@@ -83,22 +95,37 @@ class ScanReviewPage extends Component
         $this->advance();
     }
 
+    public function confirmAllKnown(): void
+    {
+        $action = new ConfirmScanItem;
+        foreach ($this->pendingItems() as $item) {
+            $product = $item->matchedProduct;
+            if ($item->matched_product_id === null || ! $product instanceof Product) {
+                continue;
+            }
+            // Known items keep their price; counts move only when asked.
+            $action->execute($item, (float) $product->price, [], $this->updateCounts);
+        }
+
+        $this->advance();
+    }
+
     public function startEdit(): void
     {
-        if ($this->form === []) {
-            $item = $this->current();
-            if ($item === null) {
-                return;
-            }
-            $extracted = $item->extracted ?? [];
-            $this->form = [
-                'name' => $extracted['name'] ?? '',
-                'size_value' => $extracted['size_value'] ?? '',
-                'size_unit' => $extracted['size_unit'] ?? 'unknown',
-                'category' => $extracted['category'] ?? 'other',
-                'qty' => $item->est_qty ?? 0,
-            ];
+        $item = $this->current();
+        if ($item === null) {
+            return;
         }
+        $extracted = $item->extracted ?? [];
+        // Defaults slide under staged values (saved edits, voice sizes) so a
+        // partial form still validates.
+        $this->form = array_merge([
+            'name' => $extracted['name'] ?? '',
+            'size_value' => $extracted['size_value'] ?? '',
+            'size_unit' => $extracted['size_unit'] ?? 'unknown',
+            'category' => $extracted['category'] ?? 'other',
+            'qty' => $item->est_qty ?? 0,
+        ], $this->form);
         $this->editing = true;
     }
 
@@ -133,6 +160,63 @@ class ScanReviewPage extends Component
     public function cancelPick(): void
     {
         $this->picking = false;
+    }
+
+    public function startPriceAll(): void
+    {
+        $this->pricingAll = true;
+    }
+
+    public function cancelPriceAll(): void
+    {
+        $this->pricingAll = false;
+    }
+
+    /**
+     * Stage one voice-priced card. Nothing saves: the values land in the
+     * card's price and size fields when the card is (or becomes) current,
+     * and only a swipe persists them.
+     */
+    public function applyVoice(int $id, mixed $price, mixed $sizeValue, mixed $sizeUnit, mixed $transcript): void
+    {
+        $this->voicePrices[$id] = [
+            'price' => is_numeric($price) && (float) $price > 0 ? (float) $price : null,
+            'size_value' => is_numeric($sizeValue) && (float) $sizeValue >= 0 ? (float) $sizeValue : null,
+            'size_unit' => is_string($sizeUnit) && in_array($sizeUnit, self::SIZE_UNITS, true) && $sizeUnit !== 'unknown'
+                ? $sizeUnit
+                : null,
+            'transcript' => is_string($transcript) && trim($transcript) !== ''
+                ? mb_substr(trim($transcript), 0, 500)
+                : null,
+        ];
+        if ($id === $this->currentItemId) {
+            $this->applyStagedVoice($id);
+        }
+    }
+
+    public function applyVoiceAll(mixed $items, mixed $transcript): void
+    {
+        $this->pricingAll = false;
+        if (! is_array($items)) {
+            return;
+        }
+        $pending = $this->pendingItems()->keyBy('id');
+        foreach ($items as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $id = (int) ($row['item_id'] ?? 0);
+            if (! $pending->has($id)) {
+                continue;
+            }
+            $this->applyVoice(
+                $id,
+                $row['price'] ?? null,
+                $row['size_value'] ?? null,
+                $row['size_unit'] ?? null,
+                $transcript
+            );
+        }
     }
 
     public function mergeWith(int $otherId): void
@@ -190,6 +274,9 @@ class ScanReviewPage extends Component
                 ? $this->nearestByEmbedding($current, $pending)
                 : null,
             'unclearRemaining' => $pending->filter(fn (ScanItem $item) => self::isUnclear($item))->count(),
+            'knownRemaining' => $pending->filter(
+                fn (ScanItem $item) => $item->matched_product_id !== null && $item->matchedProduct !== null
+            )->count(),
         ]);
     }
 
@@ -219,6 +306,40 @@ class ScanReviewPage extends Component
         $this->editing = false;
         $this->form = [];
         $this->picking = false;
+        $this->voiceTranscript = null;
+        $this->voiceFilled = false;
+        if ($current !== null && isset($this->voicePrices[$current->id])) {
+            $this->applyStagedVoice($current->id);
+        }
+    }
+
+    private function applyStagedVoice(int $id): void
+    {
+        $staged = $this->voicePrices[$id] ?? null;
+        if ($staged === null) {
+            return;
+        }
+        $filled = false;
+        if ($staged['price'] !== null) {
+            $price = $staged['price'];
+            $this->price = $price == (int) $price ? (string) (int) $price : (string) $price;
+            $filled = true;
+        }
+        $size = [];
+        if ($staged['size_value'] !== null) {
+            $size['size_value'] = $staged['size_value'];
+            $filled = true;
+        }
+        if ($staged['size_unit'] !== null) {
+            $size['size_unit'] = $staged['size_unit'];
+            $filled = true;
+        }
+        if ($size !== []) {
+            $this->form = array_merge($this->form, $size);
+        }
+        $this->voiceTranscript = $staged['transcript'];
+        $this->voiceFilled = $filled;
+        unset($this->voicePrices[$id]);
     }
 
     private function current(): ?ScanItem

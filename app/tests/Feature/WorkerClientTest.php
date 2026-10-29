@@ -144,6 +144,18 @@ test('embed returns the vector with its dim', function () {
         ->and($result->dim)->toBe(2);
 });
 
+test('embed passes the crop flag for single-product photos', function () {
+    Http::fake(['http://worker.test/embed' => Http::response([
+        'image_path' => 'try/photo.jpg', 'embedding' => [0.5, 0.5], 'dim' => 2,
+        'cropped' => true, 'box' => [10, 20, 30, 40],
+    ])]);
+
+    (new WorkerClient('http://worker.test'))->embed('try/photo.jpg', true);
+
+    Http::assertSent(fn (Request $request) => $request->url() === 'http://worker.test/embed'
+        && $request->data()['crop_largest_object'] === true);
+});
+
 test('toWav returns the converted path with format details', function () {
     Http::fake(['http://worker.test/audio/to-wav' => Http::response([
         'audio_path' => 'voice/note.ogg', 'wav_path' => 'voice/note.wav',

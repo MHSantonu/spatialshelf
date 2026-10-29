@@ -52,10 +52,11 @@ final class WorkerClient
         ]));
     }
 
-    public function embed(string $imagePath): EmbedResult
+    public function embed(string $imagePath, bool $cropLargestObject = false): EmbedResult
     {
         return EmbedResult::fromArray($this->post('/embed', [
             'image_path' => $imagePath,
+            'crop_largest_object' => $cropLargestObject,
         ]));
     }
 

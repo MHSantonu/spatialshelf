@@ -17,6 +17,130 @@
                 Reject all unclear ({{ $unclearRemaining }})
             </button>
         @endif
+        @if ($knownRemaining > 0)
+            <div class="mt-2 flex min-h-[44px] flex-wrap items-center gap-x-4 gap-y-2">
+                <button type="button" wire:click="confirmAllKnown" wire:confirm="Confirm {{ $knownRemaining }} known items?" wire:loading.attr="disabled" class="inline-flex min-h-[44px] items-center rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:opacity-50">
+                    Confirm all known ({{ $knownRemaining }})
+                </button>
+                <label class="inline-flex min-h-[44px] cursor-pointer items-center gap-2 text-sm font-medium">
+                    <input type="checkbox" wire:model.live="updateCounts" class="size-5 accent-emerald-600">
+                    Update counts
+                </label>
+            </div>
+        @endif
+        @if (! $pricingAll)
+            <button type="button" wire:click="startPriceAll" class="mt-2 inline-flex min-h-[44px] items-center gap-2 text-sm font-medium text-zinc-600 underline underline-offset-2 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="size-4" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
+                </svg>
+                Price all by voice
+            </button>
+        @else
+            <div class="mt-2 rounded-xl border border-zinc-200 p-3" x-data="{
+                recording: false,
+                busy: false,
+                error: '',
+                recorder: null,
+                chunks: [],
+                timer: null,
+                init() {
+                    this._nav = () => this.discard();
+                    document.addEventListener('livewire:navigating', this._nav);
+                },
+                destroy() {
+                    document.removeEventListener('livewire:navigating', this._nav);
+                },
+                async start() {
+                    this.error = '';
+                    if (this.busy || this.recording) return;
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+                        this.error = 'Voice is not supported in this browser.';
+                        return;
+                    }
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        const options = MediaRecorder.isTypeSupported('audio/webm') ? { mimeType: 'audio/webm' } : undefined;
+                        const recorder = options ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
+                        this.chunks = [];
+                        recorder.ondataavailable = (event) => { if (event.data && event.data.size > 0) this.chunks.push(event.data); };
+                        recorder.onstop = () => {
+                            stream.getTracks().forEach((track) => track.stop());
+                            this.upload();
+                        };
+                        this.recorder = recorder;
+                        recorder.start();
+                        this.recording = true;
+                        this.timer = setTimeout(() => this.finish(), 30000);
+                    } catch (e) {
+                        this.error = 'Microphone blocked — allow access and try again.';
+                    }
+                },
+                finish() {
+                    if (!this.recording || !this.recorder) return;
+                    this.recording = false;
+                    clearTimeout(this.timer);
+                    this.timer = null;
+                    this.busy = true;
+                    this.recorder.stop();
+                },
+                discard() {
+                    clearTimeout(this.timer);
+                    this.timer = null;
+                    this.recording = false;
+                    this.busy = false;
+                    this.chunks = [];
+                    if (this.recorder) {
+                        const recorder = this.recorder;
+                        this.recorder = null;
+                        recorder.onstop = () => {};
+                        try { recorder.stream.getTracks().forEach((track) => track.stop()); } catch (e) {}
+                        if (recorder.state !== 'inactive') { try { recorder.stop(); } catch (e) {} }
+                    }
+                },
+                async upload() {
+                    try {
+                        const type = (this.recorder && this.recorder.mimeType) || 'audio/webm';
+                        const form = new FormData();
+                        form.append('audio', new Blob(this.chunks, { type }), 'prices.webm');
+                        const token = document.querySelector('meta[name=csrf-token]');
+                        const response = await fetch('{{ route('scans.voice-all', $scan) }}', {
+                            method: 'POST',
+                            headers: {
+                                'Accept': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'X-CSRF-TOKEN': token ? token.content : '',
+                            },
+                            body: form,
+                        });
+                        const data = await response.json().catch(() => ({}));
+                        if (!response.ok) throw new Error(data.message || 'Upload failed.');
+                        if (!data.items || !data.items.length) throw new Error('No card names heard — try again.');
+                        $wire.applyVoiceAll(data.items, data.transcript ?? null);
+                    } catch (e) {
+                        this.error = (e && e.message) || 'Could not read that — try again.';
+                    } finally {
+                        this.busy = false;
+                        this.recorder = null;
+                        this.chunks = [];
+                    }
+                },
+            }">
+                <p class="text-sm font-medium">Say each product with its price, then release</p>
+                <p class="mt-0.5 text-sm text-zinc-500">For example: "Horlicks six fifty, Tang four fifty"</p>
+                <div class="mt-2 flex gap-2">
+                    <button type="button" aria-label="Hold to record all prices"
+                        @pointerdown.prevent="start()" @pointerup.window="finish()" @pointercancel.window="finish()" @contextmenu.prevent @keydown.space.prevent="start()" @keyup.space="finish()"
+                        :disabled="busy"
+                        class="inline-flex min-h-[56px] flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 font-semibold text-white hover:bg-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:opacity-50">
+                        <span x-show="!recording && !busy">Hold to record</span>
+                        <span x-show="recording" class="inline-flex items-center gap-2"><span class="size-3 rounded-sm bg-white motion-safe:animate-pulse" aria-hidden="true"></span>Listening… release to send</span>
+                        <span x-show="busy">Reading prices…</span>
+                    </button>
+                    <button type="button" wire:click="cancelPriceAll" class="inline-flex min-h-[56px] items-center rounded-xl border border-zinc-300 px-4 font-semibold hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600">Cancel</button>
+                </div>
+                <p x-show="error" x-text="error" class="mt-2 text-sm font-medium text-red-700"></p>
+            </div>
+        @endif
 
         <div
             x-data="{ startX: 0, dx: 0, dragging: false }"
@@ -54,7 +178,7 @@
 
             <p class="mt-1 text-sm text-zinc-600">
                 @php($sizeValue = $shown['size_value'])
-                {{ (is_numeric($sizeValue) && $sizeValue > 0 ? rtrim(rtrim(sprintf('%.2f', (float) $sizeValue), '0'), '.').' '.$shown['size_unit'] : 'size unknown') }}
+                <span @class(['rounded px-1', 'bg-emerald-100 font-medium text-emerald-900' => $voiceFilled])>{{ (is_numeric($sizeValue) && $sizeValue > 0 ? rtrim(rtrim(sprintf('%.2f', (float) $sizeValue), '0'), '.').' '.$shown['size_unit'] : 'size unknown') }}</span>
                 · {{ ucfirst(str_replace('_', ' ', $shown['category'])) }}
                 · ~{{ $shown['qty'] }} in stock
             </p>
@@ -66,12 +190,115 @@
                 </div>
             @endif
 
-            <div class="mt-3">
+            <div class="mt-3" x-data="{
+                recording: false,
+                busy: false,
+                error: '',
+                recorder: null,
+                chunks: [],
+                timer: null,
+                init() {
+                    this._nav = () => this.discard();
+                    document.addEventListener('livewire:navigating', this._nav);
+                },
+                destroy() {
+                    document.removeEventListener('livewire:navigating', this._nav);
+                },
+                async start() {
+                    this.error = '';
+                    if (this.busy || this.recording) return;
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+                        this.error = 'Voice is not supported in this browser.';
+                        return;
+                    }
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        const options = MediaRecorder.isTypeSupported('audio/webm') ? { mimeType: 'audio/webm' } : undefined;
+                        const recorder = options ? new MediaRecorder(stream, options) : new MediaRecorder(stream);
+                        this.chunks = [];
+                        recorder.ondataavailable = (event) => { if (event.data && event.data.size > 0) this.chunks.push(event.data); };
+                        recorder.onstop = () => {
+                            stream.getTracks().forEach((track) => track.stop());
+                            this.upload();
+                        };
+                        this.recorder = recorder;
+                        recorder.start();
+                        this.recording = true;
+                        this.timer = setTimeout(() => this.finish(), 8000);
+                    } catch (e) {
+                        this.error = 'Microphone blocked — allow access and try again.';
+                    }
+                },
+                finish() {
+                    if (!this.recording || !this.recorder) return;
+                    this.recording = false;
+                    clearTimeout(this.timer);
+                    this.timer = null;
+                    this.busy = true;
+                    this.recorder.stop();
+                },
+                discard() {
+                    clearTimeout(this.timer);
+                    this.timer = null;
+                    this.recording = false;
+                    this.busy = false;
+                    this.chunks = [];
+                    if (this.recorder) {
+                        const recorder = this.recorder;
+                        this.recorder = null;
+                        recorder.onstop = () => {};
+                        try { recorder.stream.getTracks().forEach((track) => track.stop()); } catch (e) {}
+                        if (recorder.state !== 'inactive') { try { recorder.stop(); } catch (e) {} }
+                    }
+                },
+                async upload() {
+                    try {
+                        const type = (this.recorder && this.recorder.mimeType) || 'audio/webm';
+                        const form = new FormData();
+                        form.append('audio', new Blob(this.chunks, { type }), 'price.webm');
+                        const token = document.querySelector('meta[name=csrf-token]');
+                        const response = await fetch('{{ route('scan-items.voice', $current) }}', {
+                            method: 'POST',
+                            headers: {
+                                'Accept': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'X-CSRF-TOKEN': token ? token.content : '',
+                            },
+                            body: form,
+                        });
+                        const data = await response.json().catch(() => ({}));
+                        if (!response.ok) throw new Error(data.message || 'Upload failed.');
+                        $wire.applyVoice({{ $current->id }}, data.price ?? null, data.size_value ?? null, data.size_unit ?? null, data.transcript ?? null);
+                    } catch (e) {
+                        this.error = (e && e.message) || 'Could not read that — try again.';
+                    } finally {
+                        this.busy = false;
+                        this.recorder = null;
+                        this.chunks = [];
+                    }
+                },
+            }">
                 <label for="review-price" class="text-sm font-medium">Price (৳)</label>
-                <input id="review-price" type="number" min="0" step="0.01" inputmode="decimal" wire:model.live="price" class="mt-1 flex min-h-[48px] w-full items-center rounded-xl border border-zinc-300 px-3 text-lg focus:border-emerald-600 focus:outline-none">
+                <div class="mt-1 flex gap-2">
+                    <input id="review-price" type="number" min="0" step="0.01" inputmode="decimal" wire:model.live="price" @class(['flex min-h-[48px] w-full min-w-0 items-center rounded-xl border px-3 text-lg focus:outline-none', 'border-emerald-500 bg-emerald-50 focus:border-emerald-600' => $voiceFilled, 'border-zinc-300 focus:border-emerald-600' => ! $voiceFilled])>
+                    <button type="button" title="Hold to say the price" aria-label="Hold to say the price"
+                        @pointerdown.prevent="start()" @pointerup.window="finish()" @pointercancel.window="finish()" @contextmenu.prevent @keydown.space.prevent="start()" @keyup.space="finish()"
+                        :disabled="busy"
+                        class="flex min-h-[48px] w-14 shrink-0 items-center justify-center rounded-xl border border-zinc-300 hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:opacity-50">
+                        <svg x-show="!recording && !busy" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="size-6" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
+                        </svg>
+                        <span x-show="recording" class="size-3 rounded-sm bg-red-600 motion-safe:animate-pulse" aria-hidden="true"></span>
+                        <span x-show="busy" class="size-5 rounded-full border-2 border-zinc-300 border-t-emerald-600 motion-safe:animate-spin" aria-hidden="true"></span>
+                    </button>
+                </div>
                 @error('price')
                     <p class="mt-1 text-sm font-medium text-red-700">{{ $message }}</p>
                 @enderror
+                <p x-show="error" x-text="error" class="mt-1 text-sm font-medium text-red-700"></p>
+                @if ($voiceTranscript !== null)
+                    <p class="mt-1 text-sm text-zinc-600">Heard: "{{ $voiceTranscript }}"</p>
+                @endif
             </div>
 
             <div class="mt-3 grid grid-cols-3 gap-2">

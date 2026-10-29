@@ -84,6 +84,50 @@ class ScanShowPageTest extends TestCase
             ->assertDontSee('wire:poll', false);
     }
 
+    public function test_completed_scan_shows_memory_line_with_step_timings(): void
+    {
+        $shop = Shop::factory()->create();
+        $product = Product::factory()->create(['shop_id' => $shop->id]);
+        $scan = Scan::create([
+            'shop_id' => $shop->id,
+            'video_path' => 'uploads/a.mp4',
+            'status' => ScanStatus::Completed,
+            'started_at' => now()->subSeconds(30),
+            'finished_at' => now(),
+            'stats' => ['progress' => 'Done', 'timings' => ['memory' => 0.42, 'read' => 12.3]],
+        ]);
+        ScanItem::create(['scan_id' => $scan->id, 'crop_path' => 'crops/a.jpg', 'matched_product_id' => $product->id]);
+        ScanItem::create(['scan_id' => $scan->id, 'crop_path' => 'crops/b.jpg', 'matched_product_id' => $product->id]);
+        ScanItem::create(['scan_id' => $scan->id, 'crop_path' => 'crops/c.jpg']);
+        $this->actingAs(User::factory()->create());
+
+        $this->get(route('scans.show', $scan))
+            ->assertOk()
+            ->assertSee('Found 3 products · 2 already known')
+            ->assertSee('2 recognised from memory — no AI needed')
+            ->assertSee('Memory check 0.42s · Reading labels 12.3s');
+    }
+
+    public function test_completed_scan_hides_timings_when_stats_are_missing(): void
+    {
+        $shop = Shop::factory()->create();
+        $product = Product::factory()->create(['shop_id' => $shop->id]);
+        $scan = Scan::create([
+            'shop_id' => $shop->id,
+            'video_path' => 'uploads/a.mp4',
+            'status' => ScanStatus::Completed,
+            'started_at' => now()->subSeconds(30),
+            'finished_at' => now(),
+        ]);
+        ScanItem::create(['scan_id' => $scan->id, 'crop_path' => 'crops/a.jpg', 'matched_product_id' => $product->id]);
+        $this->actingAs(User::factory()->create());
+
+        $this->get(route('scans.show', $scan))
+            ->assertOk()
+            ->assertSee('1 recognised from memory — no AI needed')
+            ->assertDontSee('Memory check');
+    }
+
     public function test_failed_scan_shows_error_and_retry_button(): void
     {
         $shop = Shop::factory()->create();

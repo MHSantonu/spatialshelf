@@ -61,4 +61,17 @@ class Order extends Model
     {
         return $this->hasOne(Conversation::class, 'pending_order_id');
     }
+
+    /**
+     * Entry surface the order came from: 'whatsapp' or 'try'.
+     */
+    public function channel(): string
+    {
+        // Larastan reads the JSON column as a string; casts() makes it an array at runtime.
+        /** @var array<string, mixed>|null $context */
+        $context = $this->context;
+        $channel = $context['channel'] ?? null;
+
+        return $channel === 'try' ? 'try' : 'whatsapp';
+    }
 }

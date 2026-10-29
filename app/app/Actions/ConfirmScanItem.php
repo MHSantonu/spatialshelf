@@ -15,10 +15,12 @@ class ConfirmScanItem
      * product (update the match or create one), always add a memory image.
      *
      * @param  array{name?: string, size_value?: mixed, size_unit?: string, category?: string, qty?: mixed}  $fields
+     * @param  bool  $updateCounts  matched items only: write the scan's est_qty
+     *                              into stock; when false the count is left alone
      */
-    public function execute(ScanItem $item, float $price, array $fields = []): Product
+    public function execute(ScanItem $item, float $price, array $fields = [], bool $updateCounts = true): Product
     {
-        return DB::transaction(function () use ($item, $price, $fields): Product {
+        return DB::transaction(function () use ($item, $price, $fields, $updateCounts): Product {
             $originalEst = (int) ($item->est_qty ?? 0);
             $extracted = $item->extracted ?? [];
             foreach (['name', 'size_value', 'size_unit', 'category'] as $key) {
@@ -36,11 +38,13 @@ class ConfirmScanItem
             if ($item->matched_product_id !== null) {
                 $product = Product::findOrFail($item->matched_product_id);
                 $updates = [
-                    'stock_qty' => $qty,
-                    'stock_is_estimate' => $qty === $originalEst,
                     'shelf_row' => $item->shelf_row,
                     'shelf_order' => $item->shelf_order,
                 ];
+                if ($updateCounts) {
+                    $updates['stock_qty'] = $qty;
+                    $updates['stock_is_estimate'] = $qty === $originalEst;
+                }
                 if ((float) $product->price !== $price) {
                     $updates['price'] = $price;
                 }

@@ -96,6 +96,24 @@ test('unmatched path creates a product from the edited fields', function () {
         ->and(ProductImage::query()->where('product_id', $product->id)->count())->toBe(1);
 });
 
+test('matched path leaves the count alone when counts are frozen', function () {
+    $shop = Shop::factory()->create();
+    $product = Product::factory()->create([
+        'shop_id' => $shop->id, 'price' => 40, 'stock_qty' => 10, 'stock_is_estimate' => false,
+    ]);
+    $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+    $item = confirmItem($scan, ['matched_product_id' => $product->id]);
+
+    (new ConfirmScanItem)->execute($item, 40.0, [], false);
+
+    expect($product->fresh()->stock_qty)->toBe(10)
+        ->and($product->fresh()->stock_is_estimate)->toBeFalse()
+        ->and($product->fresh()->shelf_row)->toBe(3)
+        ->and($product->fresh()->shelf_order)->toBe(4)
+        ->and($item->fresh()->decision)->toBe(ScanItemDecision::Confirmed)
+        ->and(ProductImage::query()->where('product_id', $product->id)->count())->toBe(1);
+});
+
 test('unmatched path falls back to the item values without edits', function () {
     $shop = Shop::factory()->create();
     $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);

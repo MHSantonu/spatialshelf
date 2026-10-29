@@ -166,3 +166,95 @@ test('readCrops returns empty for empty input without calling the API', function
         ->toBe(['items' => [], 'raw' => [], 'retries' => [], 'solos' => []]);
     Http::assertNothingSent();
 });
+
+test('classifyImage returns the kind with the raw response', function () {
+    Http::fake(function (Request $request) {
+        $payload = $request->data();
+        expect($payload['model'])->toBe('muse-spark-1.3')
+            ->and($payload['messages'][0])->toBe(['role' => 'system', 'content' => Prompts::text('classify_image')])
+            ->and($payload['response_format']['json_schema']['name'])->toBe('classify_image')
+            ->and($payload['response_format']['json_schema']['schema'])->toBe(Prompts::schema('classify_image'));
+
+        return Http::response(['choices' => [['message' => ['content' => json_encode(['kind' => 'single_product'])]]]]);
+    });
+
+    $result = sparkCropFiles(['bytes'], fn ($paths) => (new MuseSpark('test-key', 'http://meta.test'))->classifyImage($paths[0]));
+
+    expect($result['kind'])->toBe('single_product')
+        ->and($result['raw']['choices'][0]['message']['content'])->toBeString();
+});
+
+test('classifyImage fails open to list on an unknown kind', function () {
+    Http::fake(fn () => Http::response(['choices' => [['message' => ['content' => json_encode(['kind' => 'mystery'])]]]]));
+
+    $result = sparkCropFiles(['bytes'], fn ($paths) => (new MuseSpark('test-key', 'http://meta.test'))->classifyImage($paths[0]));
+
+    expect($result['kind'])->toBe('list');
+});
+
+test('parseVoicePrice sends the prompt and schema with the transcript and product', function () {
+    Http::fake(function (Request $request) {
+        $payload = $request->data();
+        expect($payload['model'])->toBe('muse-spark-1.3')
+            ->and($payload['messages'][0])->toBe(['role' => 'system', 'content' => Prompts::text('voice_price')])
+            ->and($payload['messages'][1]['content'])->toContain('Tang Orange')
+            ->and($payload['messages'][1]['content'])->toContain('chhoy sho ponchash')
+            ->and($payload['response_format']['json_schema']['name'])->toBe('voice_price')
+            ->and($payload['response_format']['json_schema']['schema'])->toBe(Prompts::schema('voice_price'));
+
+        return Http::response(['choices' => [['message' => ['content' => json_encode([
+            'price' => 650, 'size_value' => null, 'size_unit' => 'unknown', 'confidence' => 0.9,
+        ])]]]]);
+    });
+
+    $result = (new MuseSpark('test-key', 'http://meta.test'))->parseVoicePrice('chhoy sho ponchash', 'Tang Orange');
+
+    expect($result['price'])->toBe(650.0)
+        ->and($result['size_value'])->toBeNull()
+        ->and($result['size_unit'])->toBe('unknown')
+        ->and($result['confidence'])->toBe(0.9)
+        ->and($result['raw']['choices'])->toBeArray();
+});
+
+test('parseVoicePrice sanitizes numbers and units without guessing', function () {
+    Http::fake(fn () => Http::response(['choices' => [['message' => ['content' => json_encode([
+        'price' => -5, 'size_value' => 'half', 'size_unit' => 'bottle', 'confidence' => 0.4,
+    ])]]]]));
+
+    $result = (new MuseSpark('test-key', 'http://meta.test'))->parseVoicePrice('something');
+
+    expect($result['price'])->toBeNull()
+        ->and($result['size_value'])->toBeNull()
+        ->and($result['size_unit'])->toBe('unknown')
+        ->and($result['confidence'])->toBe(0.4);
+});
+
+test('parseVoicePrices maps rows by live item ids and drops the rest', function () {
+    Http::fake(function (Request $request) {
+        $payload = $request->data();
+        $schema = $payload['response_format']['json_schema'];
+        expect($schema['name'])->toBe('voice_prices')
+            ->and($schema['schema']['properties']['items']['items']['properties']['item_id']['enum'])->toBe(['11', '12', 'none'])
+            ->and($payload['messages'][0]['content'])->toContain("11: Horlicks\n12: Tang");
+
+        $content = json_encode(['items' => [
+            ['item_id' => '11', 'price' => 650, 'size_value' => null, 'size_unit' => 'unknown', 'confidence' => 0.9],
+            ['item_id' => 'none', 'price' => 10, 'size_value' => null, 'size_unit' => 'unknown', 'confidence' => 0.3],
+            ['item_id' => '99', 'price' => 10, 'size_value' => null, 'size_unit' => 'unknown', 'confidence' => 0.3],
+            ['item_id' => '11', 'price' => 700, 'size_value' => null, 'size_unit' => 'unknown', 'confidence' => 0.5],
+            ['item_id' => '12', 'price' => 450, 'size_value' => 0.5, 'size_unit' => 'kg', 'confidence' => 0.88],
+        ]]);
+
+        return Http::response(['choices' => [['message' => ['content' => $content]]]]);
+    });
+
+    $result = (new MuseSpark('test-key', 'http://meta.test'))->parseVoicePrices(
+        'Horlicks six fifty, Tang four fifty',
+        [['id' => 11, 'name' => 'Horlicks'], ['id' => 12, 'name' => 'Tang']]
+    );
+
+    expect($result['items'])->toBe([
+        ['item_id' => 11, 'price' => 650.0, 'size_value' => null, 'size_unit' => 'unknown', 'confidence' => 0.9],
+        ['item_id' => 12, 'price' => 450.0, 'size_value' => 0.5, 'size_unit' => 'kg', 'confidence' => 0.88],
+    ])->and($result['raw']['choices'])->toBeArray();
+});
