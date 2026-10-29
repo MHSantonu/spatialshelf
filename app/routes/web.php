@@ -6,6 +6,9 @@ Route::view('/', 'welcome')->name('home');
 
 Route::livewire('try', App\Livewire\TryPage::class)->name('try');
 
+Route::get('webhooks/whatsapp', [App\Http\Controllers\WhatsAppWebhookController::class, 'verify'])->name('webhooks.whatsapp.verify');
+Route::post('webhooks/whatsapp', [App\Http\Controllers\WhatsAppWebhookController::class, 'receive'])->name('webhooks.whatsapp.receive');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::redirect('dashboard', 'scan')->name('dashboard');
     Route::livewire('scan', App\Livewire\ScanPage::class)->name('scan');
