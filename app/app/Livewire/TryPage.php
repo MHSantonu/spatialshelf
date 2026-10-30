@@ -61,7 +61,7 @@ class TryPage extends Component
             $this->validate(['text' => ['required', 'string', 'max:2000']]);
             $text = trim($this->text);
         } elseif ($this->tab === 'photo') {
-            $this->validate(['photo' => ['required', 'file', 'image', 'max:10240']]);
+            $this->validate(['photo' => ['required', 'file', 'image', 'max:20480']]);
             $imagePath = (string) $this->photo->store('try', 'shared');
         } else {
             $this->validate(['audio' => ['required', 'file', 'mimetypes:audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/wav,audio/x-wav', 'max:10240']]);

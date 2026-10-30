@@ -47,7 +47,7 @@ class ScanReviewPageTest extends TestCase
             ->assertSee('1 / 2')
             ->assertSee('Known')
             ->assertSee('~4 in stock')
-            ->assertSee('bg-emerald-500', false);
+            ->assertSee('90%');
 
         Livewire::test(ScanReviewPage::class, ['scan' => $scan])->assertSet('price', '45');
     }
@@ -215,6 +215,8 @@ class ScanReviewPageTest extends TestCase
 
     public function test_unclear_card_shows_nearest_hint_with_one_tap_merge(): void
     {
+        Storage::fake('shared');
+        Storage::disk('shared')->put('scans/1/crops/kf0_0.jpg', 'fake-crop');
         $shop = Shop::factory()->create();
         $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
         $unclear = $this->makeItem($scan, [

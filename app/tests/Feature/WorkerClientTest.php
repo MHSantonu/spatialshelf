@@ -93,6 +93,7 @@ test('segment maps nested DTOs and int-keyed counts', function () {
 
     expect($result)->toBeInstanceOf(SegmentResult::class)
         ->and($result->phrases)->toBe(['bottle'])
+        ->and($result->pickedPhrases)->toBe(['bottle'])
         ->and($result->countsPerKeyframe)->toBe([0 => 29, 1 => 49])
         ->and($result->errors)->toHaveCount(1)
         ->and($result->errors[0]->error)->toBe('Timeout')
@@ -100,6 +101,20 @@ test('segment maps nested DTOs and int-keyed counts', function () {
         ->and($result->overlay->seconds)->toBe(20.3)
         ->and($result->timings->pickPhrasesSeconds)->toBeNull();
     Http::assertSent(fn (Request $request) => $request['phrases'] === ['bottle']);
+});
+
+test('segment keeps picked phrases separate from the baseline', function () {
+    $payload = workerSegmentPayload();
+    $payload['phrases'] = ['oil bottle', 'jar', 'box', 'packet', 'bottle'];
+    $payload['picked_phrases'] = ['oil bottle'];
+    $payload['phrase_source'] = 'picked';
+    Http::fake(['http://worker.test/scan/segment' => Http::response($payload)]);
+
+    $result = (new WorkerClient('http://worker.test'))->segment('s1');
+
+    expect($result->pickedPhrases)->toBe(['oil bottle'])
+        ->and($result->phrases)->toBe(['oil bottle', 'jar', 'box', 'packet', 'bottle'])
+        ->and($result->phraseSource)->toBe('picked');
 });
 
 test('segment maps a pending overlay with nulls', function () {

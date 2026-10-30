@@ -162,6 +162,7 @@ class RetryInfo(BaseModel):
 class SegmentResponse(BaseModel):
     scan_id: str
     phrases: list[str]
+    picked_phrases: list[str]
     phrase_source: str
     keyframe_indices: list[int]
     counts_per_keyframe: dict[int, int]

@@ -55,8 +55,14 @@ class ProcessScan implements ShouldQueue
             $this->mark($scan, ScanStatus::Processing, 'Choosing what to look for', $timings);
             $segmented = $worker->segment($workerId);
             $timings['segment'] = $this->elapsed($step);
+            if ($segmented->timings->pickPhrasesSeconds !== null) {
+                $timings['pick'] = $segmented->timings->pickPhrasesSeconds;
+            }
+            $timings['find'] = $segmented->timings->imageSeconds;
             $this->mark($scan, ScanStatus::Processing, 'Finding products', $timings, [
                 'phrases' => $segmented->phrases,
+                'picked_phrases' => $segmented->pickedPhrases,
+                'phrase_source' => $segmented->phraseSource,
                 'object_count' => $segmented->totalDetections,
                 'mode_used' => 'image',
                 'retried' => $segmented->retried,

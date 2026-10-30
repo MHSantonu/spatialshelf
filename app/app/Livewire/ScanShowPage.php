@@ -23,6 +23,12 @@ class ScanShowPage extends Component
         'Reading labels',
     ];
 
+    /** Timing key in stats.timings per STEPS index; shown next to finished steps. */
+    public const STEP_TIMING_KEYS = ['prepare', 'pick', 'find', 'crops', 'memory', 'read'];
+
+    /** Must match BASELINE_PHRASES in worker/services/sam.py. */
+    public const BASELINE_PHRASES = ['jar', 'box', 'packet', 'bottle'];
+
     public Scan $scan;
 
     public function mount(Scan $scan): void
@@ -45,12 +51,22 @@ class ScanShowPage extends Component
     public function render()
     {
         $this->scan->refresh();
+        /** @var array<string, mixed> $stats */
         $stats = $this->scan->stats ?? [];
+
+        $timings = $stats['timings'] ?? [];
 
         return view('livewire.scan-show-page', [
             'steps' => self::STEPS,
             'currentStep' => $this->currentStepIndex($stats['progress'] ?? null),
             'phrases' => $stats['phrases'] ?? [],
+            // Older scans predate picked_phrases; their full list doubles as the picks.
+            'pickedPhrases' => $stats['picked_phrases'] ?? $stats['phrases'] ?? [],
+            'phraseSource' => $stats['phrase_source'] ?? 'picked',
+            'stepSeconds' => array_map(
+                fn (string $key) => $timings[$key] ?? null,
+                self::STEP_TIMING_KEYS
+            ),
             'elapsed' => $this->scan->started_at
                 ? (int) $this->scan->started_at->diffInSeconds($this->scan->finished_at ?? now())
                 : 0,

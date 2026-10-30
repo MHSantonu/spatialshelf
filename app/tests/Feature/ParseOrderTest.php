@@ -196,6 +196,30 @@ test('parseOrder rotates a photo by its EXIF orientation', function () {
     expect($result['parsed']['lines'])->toHaveCount(4);
 });
 
+test('parseOrder downscales a large photo to 1600px before sending', function () {
+    if (! gdAvailable()) {
+        $this->markTestSkipped('GD is not installed.');
+    }
+    $shop = parseOrderShop();
+    $path = tempnam(sys_get_temp_dir(), 'order').'.jpg';
+    parseOrderJpeg($path, 3200, 2400);
+
+    Http::fake(function (Request $request) {
+        $url = $request->data()['messages'][1]['content'][1]['image_url']['url'];
+        $image = imagecreatefromstring(base64_decode(substr($url, strlen('data:image/jpeg;base64,'))));
+        expect(imagesx($image))->toBe(1600)->and(imagesy($image))->toBe(1200);
+        imagedestroy($image);
+
+        return Http::response(parseOrderFixture('list_1')['chat_raw']);
+    });
+
+    try {
+        (new MuseSpark('test-key', 'http://meta.test'))->parseOrder($shop, null, $path);
+    } finally {
+        @unlink($path);
+    }
+});
+
 test('parseOrder sends undecodable bytes as-is', function () {
     $shop = parseOrderShop();
     $path = tempnam(sys_get_temp_dir(), 'order');

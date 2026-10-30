@@ -25,6 +25,8 @@ final class VoiceTranscriber
 
     private const MAX_KEYWORDS = 50;
 
+    private const MAX_KEYWORD_LENGTH = 30;
+
     private readonly string $apiKey;
 
     private readonly string $baseUrl;
@@ -124,7 +126,36 @@ final class VoiceTranscriber
             }
         }
 
-        return array_slice(array_values(array_unique([...$extra, ...$names, ...$brands])), 0, self::MAX_KEYWORDS);
+        $keywords = [];
+        foreach (array_unique([...$extra, ...$names, ...$brands]) as $candidate) {
+            $keyword = $this->truncateKeyword($candidate);
+            if ($keyword !== '' && ! in_array($keyword, $keywords, true)) {
+                $keywords[] = $keyword;
+            }
+        }
+
+        return array_slice($keywords, 0, self::MAX_KEYWORDS);
+    }
+
+    /**
+     * ASR rejects any keyword over 30 characters, so long product names
+     * are cut back to the last whole word that fits. A single word with
+     * no space to cut at keeps its first 30 characters.
+     */
+    private function truncateKeyword(string $keyword): string
+    {
+        if (mb_strlen($keyword) <= self::MAX_KEYWORD_LENGTH) {
+            return $keyword;
+        }
+        $cut = mb_substr($keyword, 0, self::MAX_KEYWORD_LENGTH);
+        if (mb_substr($keyword, self::MAX_KEYWORD_LENGTH, 1) !== ' ' && mb_substr($cut, -1) !== ' ') {
+            $space = mb_strrpos($cut, ' ');
+            if ($space !== false) {
+                $cut = mb_substr($cut, 0, $space);
+            }
+        }
+
+        return rtrim($cut);
     }
 
     /** @param  array<string, mixed>  $raw */

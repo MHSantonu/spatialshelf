@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ProductImage;
 use App\Models\Scan;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ScanMediaController extends Controller
 {
@@ -41,6 +42,32 @@ class ScanMediaController extends Controller
         }
 
         return response()->file($disk->path($path), ['Content-Type' => 'image/jpeg']);
+    }
+
+    /**
+     * The middle keyframe: the frame Muse Spark saw when picking phrases.
+     * Mirrors the worker's indexed[len // 2] choice in sam.segment_scan.
+     */
+    public function keyframe(Scan $scan): BinaryFileResponse
+    {
+        $disk = Storage::disk('shared');
+        $dir = "scans/{$scan->id}/keyframes";
+        if (! $disk->directoryExists($dir)) {
+            abort(404);
+        }
+        $frames = [];
+        foreach ($disk->files($dir) as $file) {
+            if (preg_match('/^kf_(\d+)\.jpg$/', basename($file), $match)) {
+                $frames[(int) $match[1]] = $file;
+            }
+        }
+        if ($frames === []) {
+            abort(404);
+        }
+        ksort($frames);
+        $middle = array_values($frames)[intdiv(count($frames), 2)];
+
+        return response()->file($disk->path($middle), ['Content-Type' => 'image/jpeg']);
     }
 
     public function sam(Scan $scan, string $name)

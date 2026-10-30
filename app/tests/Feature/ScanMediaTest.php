@@ -21,6 +21,7 @@ class ScanMediaTest extends TestCase
 
         $this->get(route('scans.clip', $scan))->assertRedirect(route('login'));
         $this->get(route('scans.sam', [$scan, 'overlay_x']))->assertRedirect(route('login'));
+        $this->get(route('scans.keyframe', $scan))->assertRedirect(route('login'));
     }
 
     public function test_clip_streams_the_scan_video(): void
@@ -48,6 +49,36 @@ class ScanMediaTest extends TestCase
         $this->actingAs(User::factory()->create());
 
         $this->get(route('scans.clip', $scan))->assertNotFound();
+    }
+
+    public function test_keyframe_serves_the_middle_frame(): void
+    {
+        Storage::fake('shared');
+        $shop = Shop::factory()->create();
+        $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+        Storage::disk('shared')->put("scans/{$scan->id}/keyframes/kf_0.jpg", 'first');
+        Storage::disk('shared')->put("scans/{$scan->id}/keyframes/kf_1.jpg", 'middle');
+        Storage::disk('shared')->put("scans/{$scan->id}/keyframes/kf_2.jpg", 'last');
+        Storage::disk('shared')->put("scans/{$scan->id}/keyframes/notes.txt", 'ignored');
+        $this->actingAs(User::factory()->create());
+
+        $response = $this->get(route('scans.keyframe', $scan));
+
+        $response->assertOk()->assertHeader('Content-Type', 'image/jpeg');
+        $this->assertSame(
+            'middle',
+            file_get_contents($response->baseResponse->getFile()->getPathname())
+        );
+    }
+
+    public function test_keyframe_missing_returns_404(): void
+    {
+        Storage::fake('shared');
+        $shop = Shop::factory()->create();
+        $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+        $this->actingAs(User::factory()->create());
+
+        $this->get(route('scans.keyframe', $scan))->assertNotFound();
     }
 
     public function test_sam_serves_saved_raw_output(): void

@@ -136,6 +136,35 @@ test('transcribe caps keywords at 50 names then brands', function () {
         ->and($keywords)->not->toContain('');
 });
 
+test('transcribe truncates keywords to 30 characters at a word boundary', function () {
+    $shop = Shop::factory()->create();
+    Product::factory()->create([
+        'shop_id' => $shop->id,
+        'name' => 'Confidence Black Mosquito Repellent Incense Coil Low-Smoke',
+        'brand' => 'A Brand Name That Is Definitely Way Too Long',
+    ]);
+    voiceWavFile();
+    Http::fake([
+        'http://worker.test/audio/to-wav' => Http::response([
+            'audio_path' => 'a.ogg', 'wav_path' => 'voice/note.wav',
+            'sample_rate' => 24000, 'channels' => 1,
+        ]),
+        'http://meta.test/asr/transcribe' => Http::response(['transcript' => 'hi']),
+    ]);
+
+    voiceTranscriber()->transcribe('a.ogg', $shop, ['An extra keyword phrase that is also too long']);
+
+    $keywords = json_decode(voiceParts(voiceAsrRequest())['request']['contents'], true)['keywords'];
+    expect($keywords)->toBe([
+        'An extra keyword phrase that',
+        'Confidence Black Mosquito',
+        'A Brand Name That Is',
+    ]);
+    foreach ($keywords as $keyword) {
+        expect(mb_strlen($keyword))->toBeLessThanOrEqual(30);
+    }
+});
+
 test('transcribe joins turns when the transcript is missing', function () {
     $shop = Shop::factory()->create();
     voiceWavFile();

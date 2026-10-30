@@ -6,6 +6,7 @@ readonly class SegmentResult
 {
     /**
      * @param  list<string>  $phrases
+     * @param  list<string>  $pickedPhrases
      * @param  list<int>  $keyframeIndices
      * @param  array<int, int>  $countsPerKeyframe
      * @param  list<SegmentPairError>  $errors
@@ -13,6 +14,7 @@ readonly class SegmentResult
     public function __construct(
         public string $scanId,
         public array $phrases,
+        public array $pickedPhrases,
         public string $phraseSource,
         public array $keyframeIndices,
         public array $countsPerKeyframe,
@@ -34,6 +36,7 @@ readonly class SegmentResult
         return new self(
             $data['scan_id'],
             array_values($data['phrases']),
+            array_values($data['picked_phrases'] ?? $data['phrases']),
             $data['phrase_source'],
             array_map('intval', $data['keyframe_indices']),
             $counts,

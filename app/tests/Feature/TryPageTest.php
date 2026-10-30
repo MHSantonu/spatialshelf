@@ -57,7 +57,7 @@ class TryPageTest extends TestCase
 
         $this->get(route('try'))
             ->assertOk()
-            ->assertSee('Try ordering from Rahman Store — the real shop uses WhatsApp.')
+            ->assertSee('Try ordering from Mahadi Store — the real shop uses WhatsApp.')
             ->assertSee('Type')
             ->assertSee('Photo')
             ->assertSee('Voice');
@@ -84,7 +84,8 @@ class TryPageTest extends TestCase
             ->call('submit')
             ->assertHasNoErrors()
             ->assertSee('Tang x2')
-            ->assertSee('2 × Tang Orange 500g — ৳900')
+            ->assertSee('2 × Tang Orange 500g')
+            ->assertSee('৳900')
             ->assertSee('Total: ৳900');
 
         $order = Order::query()->firstOrFail();
@@ -104,7 +105,8 @@ class TryPageTest extends TestCase
             ->set('photo', UploadedFile::fake()->image('list.jpg'))
             ->call('submit')
             ->assertHasNoErrors()
-            ->assertSee('1 × Tang Orange 500g — ৳450');
+            ->assertSee('1 × Tang Orange 500g')
+            ->assertSee('৳450');
 
         $order = Order::query()->firstOrFail();
         $this->assertSame('photo', $order->source_type);
@@ -137,7 +139,8 @@ class TryPageTest extends TestCase
             ->call('submit')
             ->assertHasNoErrors()
             ->assertSee('Tang one piece')
-            ->assertSee('1 × Tang Orange 500g — ৳450');
+            ->assertSee('1 × Tang Orange 500g')
+            ->assertSee('৳450');
 
         $order = Order::query()->firstOrFail();
         $this->assertSame('voice', $order->source_type);

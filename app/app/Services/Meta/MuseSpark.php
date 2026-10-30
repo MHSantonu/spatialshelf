@@ -32,6 +32,8 @@ final class MuseSpark
 
     private const BATCH_SIZE = 8;
 
+    private const MAX_IMAGE_DIMENSION = 1600;
+
     private readonly string $apiKey;
 
     private readonly string $baseUrl;
@@ -546,6 +548,10 @@ final class MuseSpark
             throw new MuseSparkException("Image not found: {$resolved}.");
         }
 
+        // GD needs 4 bytes per pixel to decode, so a 48 MP phone photo takes
+        // ~192 MB before it can be downscaled. This covers serve, queue:work
+        // and tests, which all default to 128M.
+        ini_set('memory_limit', '512M');
         $fixed = $this->orientedJpeg($resolved, $bytes);
 
         return 'data:image/jpeg;base64,'.base64_encode($fixed ?? $bytes);
@@ -565,6 +571,20 @@ final class MuseSpark
         if ($oriented !== $image) {
             imagedestroy($image);
             $image = $oriented;
+        }
+
+        // Downscale before flattening so only one full-size buffer is ever
+        // alive; 1600px on the long side is plenty for reading a list, and
+        // shrinks the base64 payload sent to the model ~10x.
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $long = max($width, $height);
+        if ($long > self::MAX_IMAGE_DIMENSION) {
+            $scaled = imagescale($image, (int) ($width * self::MAX_IMAGE_DIMENSION / $long));
+            if ($scaled !== false) {
+                imagedestroy($image);
+                $image = $scaled;
+            }
         }
 
         $flat = imagecreatetruecolor(imagesx($image), imagesy($image));

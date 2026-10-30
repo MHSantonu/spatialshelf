@@ -85,6 +85,7 @@ def test_no_retry_when_pass_1_reaches_ten(tmp_path, monkeypatch):
     assert result["retry"] is None
     assert result["total_detections"] == 10  # 5 phrases x 2 boxes
     assert result["phrases"] == ["tin can", "jar", "box", "packet", "bottle"]
+    assert result["picked_phrases"] == ["tin can"]
     assert sorted((scan / "keyframes").glob("kf_*.jpg")) == [
         scan / "keyframes" / "kf_0.jpg"
     ]

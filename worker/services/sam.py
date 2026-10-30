@@ -671,6 +671,7 @@ async def segment_scan(
     return {
         "scan_id": scan_id,
         "phrases": phrases,
+        "picked_phrases": clean,
         "phrase_source": phrase_source,
         "keyframe_indices": [index for index, _ in indexed],
         "counts_per_keyframe": counts,

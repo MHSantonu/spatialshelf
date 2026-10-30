@@ -36,9 +36,59 @@ class ScanShowPageTest extends TestCase
             ->assertOk()
             ->assertSee('Preparing video')
             ->assertSee('Reading labels')
-            ->assertSee('Looking for: plastic jar, cardboard box')
+            ->assertSee('Muse Spark chose:')
+            ->assertSee('plastic jar')
+            ->assertSee('cardboard box')
+            ->assertSee('Safety net:')
             ->assertSee('45s elapsed')
             ->assertSee('wire:poll.2s', false);
+    }
+
+    public function test_picked_phrases_render_as_chips_above_the_safety_net(): void
+    {
+        $shop = Shop::factory()->create();
+        $scan = Scan::create([
+            'shop_id' => $shop->id,
+            'video_path' => 'uploads/a.mp4',
+            'status' => ScanStatus::Processing,
+            'started_at' => now()->subSeconds(20),
+            'stats' => [
+                'progress' => 'Finding products',
+                'phrases' => ['oil bottle', 'jar', 'box', 'packet', 'bottle'],
+                'picked_phrases' => ['oil bottle'],
+                'phrase_source' => 'picked',
+            ],
+        ]);
+        $this->actingAs(User::factory()->create());
+
+        $response = $this->get(route('scans.show', $scan))->assertOk();
+        $response->assertSee('Muse Spark chose:');
+        $response->assertSee('oil bottle');
+        $response->assertSee('Safety net: jar · box · packet · bottle');
+        // The safety net is a plain line, not a hero chip.
+        $this->assertSame(1, substr_count($response->getContent(), 'chip-pop'));
+    }
+
+    public function test_finished_steps_show_their_seconds(): void
+    {
+        $shop = Shop::factory()->create();
+        $scan = Scan::create([
+            'shop_id' => $shop->id,
+            'video_path' => 'uploads/a.mp4',
+            'status' => ScanStatus::Processing,
+            'started_at' => now()->subSeconds(20),
+            'stats' => [
+                'progress' => 'Cutting out products',
+                'timings' => ['prepare' => 2.5, 'pick' => 4.2, 'find' => 31.8],
+            ],
+        ]);
+        $this->actingAs(User::factory()->create());
+
+        $this->get(route('scans.show', $scan))
+            ->assertOk()
+            ->assertSee('2.5s')
+            ->assertSee('4.2s')
+            ->assertSee('31.8s');
     }
 
     public function test_queued_scan_says_queued(): void

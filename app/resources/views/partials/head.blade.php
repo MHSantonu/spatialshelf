@@ -11,6 +11,8 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
 @fonts
+<link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
+<link href="https://fonts.bunny.net/css?family=noto-sans-bengali:wght@400;500;600;700" rel="stylesheet">
 
 @vite(['resources/css/app.css', 'resources/js/app.js'])
 @fluxAppearance
