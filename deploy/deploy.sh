@@ -56,11 +56,15 @@ php artisan migrate --force
 echo "==> Laravel: caches + permissions"
 php artisan config:cache
 php artisan route:cache
-php artisan view:cache
 mkdir -p "$ROOT/storage-shared"
 # Web server (www-data) and shelf share group access to writable dirs.
 sudo chown -R shelf:www-data "$APP/storage" "$APP/bootstrap/cache" "$ROOT/storage-shared"
 sudo chmod -R 775 "$APP/storage" "$APP/bootstrap/cache" "$ROOT/storage-shared"
+# Blade re-touches compiled views (with an explicit mtime) whenever a source
+# is newer, and only the file OWNER may set explicit times — group write is
+# not enough. So the view cache is built last, as www-data, after the chown
+# above. (config/route caches are read-only at runtime and stay shelf-owned.)
+sudo -u www-data php artisan view:cache
 
 echo "==> worker: venv (Python 3.11, torch CPU)"
 cd "$ROOT/worker"

@@ -59,6 +59,12 @@ bash deploy/deploy.sh
 and certbot are untouched. If the machine itself was rebuilt, start
 again from "First deploy".
 
+`deploy.sh` builds the Blade view cache as `www-data` on purpose:
+Laravel re-touches compiled views with an explicit mtime whenever a
+source is newer, and only the file owner may set explicit times, so a
+shelf-owned view cache 500s with `touch(): Utime failed`. If pages 500
+with that error, `php artisan view:clear` heals it at once.
+
 ## Logs
 
 | What | Where |
