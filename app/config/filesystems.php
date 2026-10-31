@@ -50,6 +50,11 @@ return [
         'shared' => [
             'driver' => 'local',
             'root' => env('SHARED_STORAGE_PATH', realpath(base_path('../storage-shared')) ?: base_path('../storage-shared')),
+            // Both php-fpm (www-data) and the Python worker (shelf) read and
+            // write here, so new files and directories must stay
+            // world-readable. The default private visibility creates 0700
+            // directories that the other user cannot enter.
+            'visibility' => 'public',
             'throw' => false,
             'report' => false,
         ],

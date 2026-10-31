@@ -122,6 +122,13 @@ class VoicePriceTest extends TestCase
         ])->assertStatus(422)->assertJsonPath('message', 'No speech detected — hold the button and try again.');
     }
 
+    public function test_shared_disk_stays_world_readable_for_the_worker(): void
+    {
+        // php-fpm uploads and the shelf-owned Python worker share this disk;
+        // private visibility would create 0700 directories the worker cannot read.
+        $this->assertSame('public', config('filesystems.disks.shared.visibility'));
+    }
+
     public function test_non_audio_upload_is_rejected(): void
     {
         $shop = Shop::factory()->create();
