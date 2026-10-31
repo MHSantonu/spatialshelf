@@ -58,20 +58,24 @@ apt-get install -y nginx
 echo "==> MySQL 8"
 apt-get install -y mysql-server
 
-echo "==> PHP 8.3 (+ fpm + extensions)"
+echo "==> PHP 8.4 via Ondrej PPA (+ fpm + extensions)"
+# composer.lock needs PHP >= 8.4 (dev runs 8.4); Ubuntu 24.04 ships 8.3.
+add-apt-repository -y ppa:ondrej/php
+apt-get update
 apt-get install -y \
-  php8.3 php8.3-cli php8.3-fpm php8.3-mysql php8.3-xml php8.3-mbstring \
-  php8.3-curl php8.3-zip php8.3-gd php8.3-bcmath php8.3-intl \
-  php8.3-opcache php8.3-readline
+  php8.4 php8.4-cli php8.4-fpm php8.4-mysql php8.4-xml php8.4-mbstring \
+  php8.4-curl php8.4-zip php8.4-gd php8.4-bcmath php8.4-intl \
+  php8.4-opcache php8.4-readline
+update-alternatives --set php /usr/bin/php8.4
 # Shelf videos upload through PHP: allow 200 MB like local `composer serve`.
 printf '%s\n' \
   "upload_max_filesize = 200M" \
   "post_max_size = 200M" \
   "max_execution_time = 600" \
   "max_input_time = 600" \
-  "memory_limit = 512M" > /etc/php/8.3/fpm/conf.d/99-spatialshelf.ini
-printf '%s\n' "memory_limit = 1G" > /etc/php/8.3/cli/conf.d/99-spatialshelf.ini
-systemctl enable --now php8.3-fpm
+  "memory_limit = 512M" > /etc/php/8.4/fpm/conf.d/99-spatialshelf.ini
+printf '%s\n' "memory_limit = 1G" > /etc/php/8.4/cli/conf.d/99-spatialshelf.ini
+systemctl enable --now php8.4-fpm
 
 echo "==> composer"
 if ! command -v composer >/dev/null 2>&1; then

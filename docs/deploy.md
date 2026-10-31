@@ -5,7 +5,7 @@ and how to verify it. The deploy kit lives in `deploy/`:
 
 | File | Used |
 | --- | --- |
-| `deploy/server-setup.sh` | Once, as root: user, firewall, swap, nginx, MySQL 8, PHP 8.3, Python 3.11, Node 20, ffmpeg, supervisor, certbot, DB + user |
+| `deploy/server-setup.sh` | Once, as root: user, firewall, swap, nginx, MySQL 8, PHP 8.4 (Ondrej PPA — composer.lock needs ≥ 8.4), Python 3.11 (deadsnakes), Node 20, ffmpeg, supervisor, certbot, DB + user |
 | `deploy/nginx-spatialshelf.conf` | Nginx site template (`DOMAIN` replaced at install) |
 | `deploy/supervisor-queue.conf` | Laravel `queue:work` on `scans,whatsapp,default` |
 | `deploy/supervisor-worker.conf` | Python worker (uvicorn on 127.0.0.1:8080) |
@@ -68,7 +68,7 @@ again from "First deploy".
 | Worker | `/var/log/spatialshelf-worker.log` |
 | Nginx access / error | `/var/log/nginx/access.log`, `/var/log/nginx/error.log` |
 | Supervisor | `sudo supervisorctl tail spatialshelf-queue` (or `-worker`) |
-| Boot services | `systemctl status php8.3-fpm nginx mysql supervisor` |
+| Boot services | `systemctl status php8.4-fpm nginx mysql supervisor` |
 
 ## WhatsApp
 
@@ -103,4 +103,9 @@ Expect `TEST123` back.
 
 <!-- Updated at the end of the first deploy. -->
 
-- Status: not deployed yet.
+- Status: LIVE since Oct 31, 2026 — https://159-65-146-210.sslip.io
+  (droplet `spatialshelf`, blr1, s-2vcpu-4gb, 159.65.146.210).
+- Deploy notes: server runs PHP 8.4 (Ondrej PPA, composer.lock needs
+  ≥ 8.4 — not 8.3); seed with `config:clear` first (DemoShopSeeder
+  reads env, seed, then re-cache). Test checklist below all verified
+  except a real scan upload and a real WhatsApp order.
