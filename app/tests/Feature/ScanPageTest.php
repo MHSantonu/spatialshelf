@@ -38,6 +38,33 @@ class ScanPageTest extends TestCase
             ->assertSee('0 items');
     }
 
+    public function test_scan_offers_record_and_gallery_inputs(): void
+    {
+        Shop::factory()->create();
+        $this->actingAs(User::factory()->create());
+
+        $html = $this->get(route('scan'))->assertOk()->getContent();
+
+        $this->assertStringContainsString('Record a shelf', $html);
+        $this->assertStringContainsString('Choose from gallery', $html);
+        preg_match_all('/<input[^>]*>/', $html, $matches);
+        $videoInputs = array_values(array_filter(
+            $matches[0],
+            fn (string $tag): bool => str_contains($tag, 'wire:model="video"')
+        ));
+        $this->assertCount(2, $videoInputs);
+        foreach ($videoInputs as $tag) {
+            $this->assertStringContainsString('type="file"', $tag);
+            $this->assertStringContainsString('accept="video/*"', $tag);
+        }
+        $withCapture = array_values(array_filter(
+            $videoInputs,
+            fn (string $tag): bool => str_contains($tag, 'capture=')
+        ));
+        $this->assertCount(1, $withCapture);
+        $this->assertStringContainsString('capture="environment"', $withCapture[0]);
+    }
+
     public function test_recent_scans_lists_only_the_last_five(): void
     {
         $shop = Shop::factory()->create();

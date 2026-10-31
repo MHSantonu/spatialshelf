@@ -73,6 +73,32 @@ class TryPageTest extends TestCase
             ->assertSee('/ 0:30');
     }
 
+    public function test_photo_tab_offers_take_photo_and_gallery_inputs(): void
+    {
+        Shop::factory()->create();
+
+        $html = Livewire::test(TryPage::class)->call('selectTab', 'photo')->html();
+
+        $this->assertStringContainsString('Take photo', $html);
+        $this->assertStringContainsString('Choose from gallery', $html);
+        preg_match_all('/<input[^>]*>/', $html, $matches);
+        $photoInputs = array_values(array_filter(
+            $matches[0],
+            fn (string $tag): bool => str_contains($tag, 'wire:model="photo"')
+        ));
+        $this->assertCount(2, $photoInputs);
+        foreach ($photoInputs as $tag) {
+            $this->assertStringContainsString('type="file"', $tag);
+            $this->assertStringContainsString('accept="image/*"', $tag);
+        }
+        $withCapture = array_values(array_filter(
+            $photoInputs,
+            fn (string $tag): bool => str_contains($tag, 'capture=')
+        ));
+        $this->assertCount(1, $withCapture);
+        $this->assertStringContainsString('capture="environment"', $withCapture[0]);
+    }
+
     public function test_text_submit_creates_simulated_order_and_shows_invoice(): void
     {
         $shop = Shop::factory()->create();
