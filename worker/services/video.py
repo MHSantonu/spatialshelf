@@ -1,8 +1,10 @@
 """Video prep: downsample and extract frames with ffmpeg/ffprobe.
 
 All paths in and out are relative to SHARED_STORAGE_PATH. Phone clips
-with a rotation flag are baked upright into the pixels (ffmpeg
-autorotate); outputs carry no rotate tag.
+with a rotation flag are baked upright into the pixels (ffmpeg applies
+rotation metadata by default on 6.x and 9.x; the -autorotate flag
+itself changed syntax between those versions, so it is not passed);
+outputs carry no rotate tag.
 
 Transcode and keyframe logic is ported from spikes/sam_video.py
 (make_clip) and spikes/sam_frames.py (extract_frames, pick_indices).
@@ -220,7 +222,6 @@ def make_clip(src: Path, dst: Path, width: int, height: int) -> None:
     cmd = [
         _ffmpeg(),
         "-y",
-        "-autorotate",
         "-i",
         str(src),
         "-vf",
@@ -256,7 +257,6 @@ def extract_frames(
     cmd = [
         _ffmpeg(),
         "-y",
-        "-autorotate",
         "-i",
         str(src),
         "-vf",
