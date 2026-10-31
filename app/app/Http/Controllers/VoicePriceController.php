@@ -75,7 +75,9 @@ class VoicePriceController extends Controller
     private function validatedAudio(Request $request): UploadedFile
     {
         $request->validate([
-            'audio' => ['required', 'file', 'mimetypes:audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/wav,audio/x-wav', 'max:10240'],
+            // finfo sniffs phone recordings by container: WebM audio arrives as
+            // video/webm and MP4 audio as video/mp4. ffmpeg still converts them.
+            'audio' => ['required', 'file', 'mimetypes:audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/wav,audio/x-wav,video/webm,video/mp4', 'max:10240'],
         ]);
         $file = $request->file('audio');
         if (! $file instanceof UploadedFile) {

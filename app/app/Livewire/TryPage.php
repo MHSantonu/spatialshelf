@@ -64,7 +64,9 @@ class TryPage extends Component
             $this->validate(['photo' => ['required', 'file', 'image', 'max:20480']]);
             $imagePath = (string) $this->photo->store('try', 'shared');
         } else {
-            $this->validate(['audio' => ['required', 'file', 'mimetypes:audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/wav,audio/x-wav', 'max:10240']]);
+            // Same container-sniffing note as VoicePriceController: finfo reports
+            // phone WebM recordings as video/webm and MP4 ones as video/mp4.
+            $this->validate(['audio' => ['required', 'file', 'mimetypes:audio/webm,audio/ogg,audio/mp4,audio/x-m4a,audio/mpeg,audio/wav,audio/x-wav,video/webm,video/mp4', 'max:10240']]);
             $audioPath = (string) $this->audio->store('try', 'shared');
         }
 

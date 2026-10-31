@@ -134,6 +134,30 @@ class VoicePriceTest extends TestCase
         ])->assertStatus(422)->assertJsonValidationErrors('audio');
     }
 
+    public function test_phone_webm_recording_sniffed_as_video_webm_is_accepted(): void
+    {
+        $shop = Shop::factory()->create();
+        $scan = Scan::create(['shop_id' => $shop->id, 'video_path' => 'uploads/a.mp4']);
+        $item = $this->makeItem($scan, 'Tang Orange');
+        $this->fakeVoiceChain(
+            '650 taka',
+            ['price' => 650, 'size_value' => null, 'size_unit' => 'unknown', 'confidence' => 0.99]
+        );
+        $this->actingAs(User::factory()->create());
+
+        // Minimal EBML header with a WebM DocType: finfo reports video/webm,
+        // exactly like a phone MediaRecorder upload. A real UploadedFile is
+        // required here — fakes report the mime they are constructed with.
+        $path = $this->sharedRoot.'/note.webm';
+        file_put_contents($path, hex2bin('1a45dfa3844282847765626d'));
+        $audio = new UploadedFile($path, 'note.webm', 'audio/webm', UPLOAD_ERR_OK, true);
+        $this->assertSame('video/webm', $audio->getMimeType());
+
+        $this->postJson(route('scan-items.voice', $item), ['audio' => $audio])
+            ->assertOk()
+            ->assertJsonPath('price', 650);
+    }
+
     public function test_voice_all_maps_prices_to_pending_cards_by_id(): void
     {
         $shop = Shop::factory()->create();
