@@ -4,8 +4,10 @@ Mono 16-bit PCM at 24 kHz with metadata stripped, ported from
 spikes/parse_order.py convert_to_wav(). Input may be ogg/opus from
 WhatsApp, webm from browsers, m4a, or anything else ffmpeg decodes.
 
-All paths in and out are relative to SHARED_STORAGE_PATH; the WAV lands
-next to the source file under the same stem.
+All paths in and out are relative to SHARED_STORAGE_PATH. The WAV lands
+under wav/, mirroring the source's parent dir: the worker (shelf) cannot
+write next to uploads created by php-fpm (www-data), but it owns wav/
+itself. The WAV is chmodded 0644 so the web side can read it back.
 """
 
 from __future__ import annotations
@@ -39,11 +41,13 @@ def to_wav(shared_root: Path, audio_path: str) -> dict:
     if not src.is_file():
         raise FileNotFoundError(f"Audio not found: {audio_path}")
 
-    final = src.with_suffix(".wav")
+    out_dir = root / "wav" / src.parent.relative_to(root)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    final = out_dir / f"{src.stem}.wav"
     dst = final
     if dst == src:
         # Never read and write the same file; convert aside, then replace.
-        dst = src.with_name(f"{src.stem}.to-wav.wav")
+        dst = out_dir / f"{src.stem}.to-wav.wav"
     cmd = [
         _ffmpeg(),
         "-y",
@@ -67,6 +71,9 @@ def to_wav(shared_root: Path, audio_path: str) -> dict:
     if dst != final:
         dst.replace(final)
         dst = final
+    # The web side (a different OS user) reads this file back; never let a
+    # restrictive umask make it unreadable.
+    dst.chmod(0o644)
     _check_wav(dst, src.name)
 
     return {
