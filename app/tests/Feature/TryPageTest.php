@@ -255,6 +255,20 @@ class TryPageTest extends TestCase
         $this->assertSame(10, Order::query()->count());
     }
 
+    public function test_voice_recorder_is_self_contained(): void
+    {
+        Shop::factory()->create();
+
+        $html = Livewire::test(TryPage::class)->call('selectTab', 'voice')->html();
+
+        // The recorder HTML is injected by a Livewire morph when the tab
+        // opens, so it must initialize from inline x-data alone: an external
+        // script function or wire:ignore leaves the card dead (empty box).
+        $this->assertStringContainsString('x-data="{', $html);
+        $this->assertStringNotContainsString('tryRecorder', $html);
+        $this->assertStringNotContainsString('wire:ignore', $html);
+    }
+
     public function test_sample_buttons_are_offered_on_each_tab(): void
     {
         Shop::factory()->create();

@@ -78,7 +78,97 @@
         @endif
 
         @if ($tab === 'voice')
-            <x-ui.card class="mt-4" x-data="tryRecorder()" wire:ignore>
+            <x-ui.card class="mt-4" x-data="{
+                supported: !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+                recording: false,
+                uploading: false,
+                uploaded: false,
+                seconds: 0,
+                timer: null,
+                recorder: null,
+                stream: null,
+                chunks: [],
+                hint: 'Up to 30 seconds, like a WhatsApp voice note.',
+                get clock() {
+                    const total = Math.floor(this.seconds);
+                    return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
+                },
+                async toggle() {
+                    if (this.recording) {
+                        this.stop();
+                    } else {
+                        await this.start();
+                    }
+                },
+                async start() {
+                    this.hint = '';
+                    this.uploaded = false;
+                    let stream;
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    } catch (error) {
+                        this.hint = 'Microphone unavailable. Check the browser permission and try again.';
+                        return;
+                    }
+                    this.stream = stream;
+                    const mime = ['audio/webm', 'audio/mp4', 'audio/ogg'].find((type) => {
+                        try {
+                            return MediaRecorder.isTypeSupported(type);
+                        } catch (error) {
+                            return false;
+                        }
+                    }) || '';
+                    this.chunks = [];
+                    this.recorder = new MediaRecorder(stream, mime === '' ? undefined : { mimeType: mime });
+                    this.recorder.ondataavailable = (event) => {
+                        if (event.data && event.data.size > 0) {
+                            this.chunks.push(event.data);
+                        }
+                    };
+                    this.recorder.onstop = () => this.finish();
+                    this.seconds = 0;
+                    this.recording = true;
+                    this.recorder.start();
+                    const started = Date.now();
+                    this.timer = setInterval(() => {
+                        this.seconds = (Date.now() - started) / 1000;
+                        if (this.seconds >= 30) {
+                            this.stop();
+                        }
+                    }, 250);
+                },
+                stop() {
+                    if (this.timer) {
+                        clearInterval(this.timer);
+                        this.timer = null;
+                    }
+                    if (this.recorder && this.recorder.state !== 'inactive') {
+                        this.recorder.stop();
+                    }
+                    if (this.stream) {
+                        this.stream.getTracks().forEach((track) => track.stop());
+                        this.stream = null;
+                    }
+                    this.recording = false;
+                },
+                finish() {
+                    const type = this.recorder && this.recorder.mimeType
+                        ? this.recorder.mimeType.split(';')[0]
+                        : 'audio/webm';
+                    const ext = type === 'audio/mp4' ? 'mp4' : (type === 'audio/ogg' ? 'ogg' : 'webm');
+                    const file = new File(this.chunks, 'note.' + ext, { type });
+                    this.uploading = true;
+                    this.hint = 'Uploading…';
+                    this.$wire.upload('audio', file, () => {
+                        this.uploading = false;
+                        this.uploaded = true;
+                        this.hint = 'Recorded ' + this.clock + '. Record again or send it.';
+                    }, () => {
+                        this.uploading = false;
+                        this.hint = 'Upload failed. Please record again.';
+                    });
+                },
+            }">
                 <template x-if="!supported">
                     <p class="text-base font-medium text-red-700">Voice recording needs a browser with microphone access, such as Chrome or Safari.</p>
                 </template>
@@ -93,102 +183,6 @@
             <x-ui.button wire:click="useSample('voice')" wire:loading.attr="disabled" variant="secondary" size="lg" class="mt-2 w-full">
                 Use a sample voice note
             </x-ui.button>
-            <script>
-                function tryRecorder() {
-                    const MAX_SECONDS = 30;
-                    return {
-                        supported: !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
-                        recording: false,
-                        uploading: false,
-                        uploaded: false,
-                        seconds: 0,
-                        timer: null,
-                        recorder: null,
-                        stream: null,
-                        chunks: [],
-                        hint: 'Up to 30 seconds, like a WhatsApp voice note.',
-                        get clock() {
-                            const total = Math.floor(this.seconds);
-                            return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
-                        },
-                        async toggle() {
-                            if (this.recording) {
-                                this.stop();
-                            } else {
-                                await this.start();
-                            }
-                        },
-                        async start() {
-                            this.hint = '';
-                            this.uploaded = false;
-                            let stream;
-                            try {
-                                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                            } catch (error) {
-                                this.hint = 'Microphone unavailable. Check the browser permission and try again.';
-                                return;
-                            }
-                            this.stream = stream;
-                            const mime = ['audio/webm', 'audio/mp4', 'audio/ogg'].find((type) => {
-                                try {
-                                    return MediaRecorder.isTypeSupported(type);
-                                } catch (error) {
-                                    return false;
-                                }
-                            }) || '';
-                            this.chunks = [];
-                            this.recorder = new MediaRecorder(stream, mime === '' ? undefined : { mimeType: mime });
-                            this.recorder.ondataavailable = (event) => {
-                                if (event.data && event.data.size > 0) {
-                                    this.chunks.push(event.data);
-                                }
-                            };
-                            this.recorder.onstop = () => this.finish();
-                            this.seconds = 0;
-                            this.recording = true;
-                            this.recorder.start();
-                            const started = Date.now();
-                            this.timer = setInterval(() => {
-                                this.seconds = (Date.now() - started) / 1000;
-                                if (this.seconds >= MAX_SECONDS) {
-                                    this.stop();
-                                }
-                            }, 250);
-                        },
-                        stop() {
-                            if (this.timer) {
-                                clearInterval(this.timer);
-                                this.timer = null;
-                            }
-                            if (this.recorder && this.recorder.state !== 'inactive') {
-                                this.recorder.stop();
-                            }
-                            if (this.stream) {
-                                this.stream.getTracks().forEach((track) => track.stop());
-                                this.stream = null;
-                            }
-                            this.recording = false;
-                        },
-                        finish() {
-                            const type = this.recorder && this.recorder.mimeType
-                                ? this.recorder.mimeType.split(';')[0]
-                                : 'audio/webm';
-                            const ext = type === 'audio/mp4' ? 'mp4' : (type === 'audio/ogg' ? 'ogg' : 'webm');
-                            const file = new File(this.chunks, 'note.' + ext, { type });
-                            this.uploading = true;
-                            this.hint = 'Uploading…';
-                            this.$wire.upload('audio', file, () => {
-                                this.uploading = false;
-                                this.uploaded = true;
-                                this.hint = 'Recorded ' + this.clock + '. Record again or send it.';
-                            }, () => {
-                                this.uploading = false;
-                                this.hint = 'Upload failed. Please record again.';
-                            });
-                        },
-                    };
-                }
-            </script>
             @error('audio') <p class="error-text">{{ $message }}</p> @enderror
             @if ($audio)
                 <audio controls src="{{ $audio->temporaryUrl() }}" class="mt-3 w-full"></audio>
