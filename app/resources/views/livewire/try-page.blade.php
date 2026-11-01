@@ -38,6 +38,9 @@
             <x-ui.button wire:click="submit" wire:loading.attr="disabled" size="lg" class="mt-3 w-full">
                 Send order
             </x-ui.button>
+            <x-ui.button wire:click="useSample('text')" wire:loading.attr="disabled" variant="secondary" size="lg" class="mt-2 w-full">
+                Use a sample message
+            </x-ui.button>
         @endif
 
         @if ($tab === 'photo')
@@ -58,6 +61,9 @@
                     <input type="file" class="sr-only" wire:model="photo" accept="image/*">
                 </label>
             </div>
+            <x-ui.button wire:click="useSample('photo')" wire:loading.attr="disabled" variant="secondary" size="lg" class="mt-2 w-full">
+                Use a sample list photo
+            </x-ui.button>
             <div wire:loading wire:target="photo" class="mt-3 flex items-center gap-2 text-base font-medium text-leaf-700">
                 <span class="size-5 shrink-0 rounded-full border-2 border-stone-300 border-t-leaf-700 motion-safe:animate-spin" aria-hidden="true"></span>
                 Uploading your photo…
@@ -84,6 +90,9 @@
                 </div>
                 <p class="mt-2 text-base text-stone-600" x-show="supported" x-text="hint"></p>
             </x-ui.card>
+            <x-ui.button wire:click="useSample('voice')" wire:loading.attr="disabled" variant="secondary" size="lg" class="mt-2 w-full">
+                Use a sample voice note
+            </x-ui.button>
             <script>
                 function tryRecorder() {
                     const MAX_SECONDS = 30;
@@ -193,6 +202,10 @@
             <span class="size-5 shrink-0 rounded-full border-2 border-stone-300 border-t-leaf-700 motion-safe:animate-spin" aria-hidden="true"></span>
             Got it, checking the shelf…
         </div>
+        <div wire:loading wire:target="useSample" class="mt-3 flex items-center gap-2 text-base font-medium text-leaf-700">
+            <span class="size-5 shrink-0 rounded-full border-2 border-stone-300 border-t-leaf-700 motion-safe:animate-spin" aria-hidden="true"></span>
+            Got it, checking the shelf…
+        </div>
         @error('form') <p class="error-text">{{ $message }}</p> @enderror
     @else
         <div class="mt-4 space-y-3 rounded-xl bg-stone-100 p-3">
@@ -201,6 +214,13 @@
                     <img src="{{ $photo->temporaryUrl() }}" alt="Your list photo" class="max-h-56 rounded-lg object-cover">
                 @elseif ($order->source_type === 'voice' && $audio)
                     <audio controls src="{{ $audio->temporaryUrl() }}" class="w-full min-w-52"></audio>
+                    @if ($order->transcript)
+                        <p class="mt-1 text-base text-leaf-50">{{ $order->transcript }}</p>
+                    @endif
+                @elseif ($sampleKind === 'photo')
+                    <p class="text-base text-leaf-50">Sample list photo</p>
+                @elseif ($sampleKind === 'voice')
+                    <p class="text-base text-leaf-50">Sample voice note</p>
                     @if ($order->transcript)
                         <p class="mt-1 text-base text-leaf-50">{{ $order->transcript }}</p>
                     @endif

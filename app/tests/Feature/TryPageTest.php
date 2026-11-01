@@ -255,6 +255,101 @@ class TryPageTest extends TestCase
         $this->assertSame(10, Order::query()->count());
     }
 
+    public function test_sample_buttons_are_offered_on_each_tab(): void
+    {
+        Shop::factory()->create();
+
+        Livewire::test(TryPage::class)
+            ->assertSee('Use a sample message');
+
+        Livewire::test(TryPage::class)
+            ->call('selectTab', 'photo')
+            ->assertSee('Use a sample list photo');
+
+        Livewire::test(TryPage::class)
+            ->call('selectTab', 'voice')
+            ->assertSee('Use a sample voice note');
+    }
+
+    public function test_sample_text_submit_creates_simulated_order(): void
+    {
+        $shop = Shop::factory()->create();
+        $tang = $this->tang($shop->id);
+        $this->fakeChat([['requested_text' => 'Tang x2', 'qty' => 2, 'product_id' => (string) $tang->id]]);
+
+        Livewire::test(TryPage::class)
+            ->call('useSample', 'text')
+            ->assertHasNoErrors()
+            ->assertSee('2 × Tang Orange 500g')
+            ->assertSee('Total: ৳900');
+
+        $order = Order::query()->firstOrFail();
+        $this->assertSame(OrderStatus::Simulated, $order->status);
+        $this->assertSame('text', $order->source_type);
+        $this->assertSame('try', $order->context['channel']);
+    }
+
+    public function test_sample_photo_submit_uses_bundled_list(): void
+    {
+        $shop = Shop::factory()->create();
+        $tang = $this->tang($shop->id);
+        $this->fakeChat([['requested_text' => 'Tang', 'qty' => 1, 'product_id' => (string) $tang->id]]);
+
+        Livewire::test(TryPage::class)
+            ->call('useSample', 'photo')
+            ->assertHasNoErrors()
+            ->assertSee('Sample list photo')
+            ->assertSee('1 × Tang Orange 500g');
+
+        $order = Order::query()->firstOrFail();
+        $this->assertSame('photo', $order->source_type);
+        $this->assertStringStartsWith('try/sample-photo-', $order->raw_input_path);
+        $this->assertFileExists($this->sharedRoot.'/'.$order->raw_input_path);
+    }
+
+    public function test_sample_voice_submit_transcribes_first(): void
+    {
+        $shop = Shop::factory()->create();
+        $tang = $this->tang($shop->id);
+        mkdir($this->sharedRoot.'/voice', recursive: true);
+        file_put_contents($this->sharedRoot.'/voice/note.wav', 'fake-wav-bytes');
+        $worker = rtrim(config('spatialshelf.worker_url'), '/');
+        $meta = rtrim(config('spatialshelf.meta_base_url'), '/');
+        Http::fake([
+            "{$worker}/audio/to-wav" => Http::response([
+                'audio_path' => 'try/note', 'wav_path' => 'voice/note.wav',
+                'sample_rate' => 24000, 'channels' => 1,
+            ]),
+            "{$meta}/asr/transcribe" => Http::response(['transcript' => 'Tang one piece']),
+            "{$meta}/chat/completions" => Http::response($this->chatRaw([
+                ['requested_text' => 'Tang one piece', 'qty' => 1, 'product_id' => (string) $tang->id],
+            ])),
+        ]);
+
+        Livewire::test(TryPage::class)
+            ->call('useSample', 'voice')
+            ->assertHasNoErrors()
+            ->assertSee('Sample voice note')
+            ->assertSee('Tang one piece')
+            ->assertSee('1 × Tang Orange 500g');
+
+        $order = Order::query()->firstOrFail();
+        $this->assertSame('voice', $order->source_type);
+        $this->assertSame('Tang one piece', $order->transcript);
+        $this->assertStringStartsWith('try/sample-voice-', $order->raw_input_path);
+    }
+
+    public function test_use_sample_rejects_unknown_kind(): void
+    {
+        Shop::factory()->create();
+
+        Livewire::test(TryPage::class)
+            ->call('useSample', 'bogus')
+            ->assertHasNoErrors();
+
+        $this->assertSame(0, Order::query()->count());
+    }
+
     public function test_empty_text_is_rejected(): void
     {
         Shop::factory()->create();

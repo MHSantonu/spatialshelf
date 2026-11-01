@@ -8,6 +8,7 @@ use App\Models\Shop;
 use App\Services\Orders\OrderIntake;
 use App\Support\Money;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
@@ -34,6 +35,11 @@ class TryPage extends Component
 
     public bool $simulated = false;
 
+    /** Which bundled sample produced the order, if any: 'text', 'photo' or 'voice'. */
+    public ?string $sampleKind = null;
+
+    public const SAMPLE_TEXT = '2 Tang Orange, 1 ACI salt';
+
     public function selectTab(string $tab): void
     {
         if (! in_array($tab, ['type', 'photo', 'voice'], true)) {
@@ -45,15 +51,6 @@ class TryPage extends Component
 
     public function submit(): void
     {
-        $key = 'try-order:'.(request()->ip() ?? 'unknown');
-        if (RateLimiter::tooManyAttempts($key, 10)) {
-            $minutes = max(1, (int) ceil(RateLimiter::availableIn($key) / 60));
-            $this->addError('form', "Too many tries — please come back in {$minutes} minute".($minutes === 1 ? '' : 's').'.');
-
-            return;
-        }
-        RateLimiter::hit($key, 3600);
-
         $text = null;
         $imagePath = null;
         $audioPath = null;
@@ -70,11 +67,67 @@ class TryPage extends Component
             $audioPath = (string) $this->audio->store('try', 'shared');
         }
 
+        $this->placeOrder($text, $imagePath, $audioPath, null);
+    }
+
+    /**
+     * One-tap sample order: the bundled repo sample is copied into the
+     * shared try/ directory and runs the exact same intake + rate limit
+     * as a judge's own upload, so the invoice proves the real pipeline.
+     */
+    public function useSample(string $kind): void
+    {
+        if (! in_array($kind, ['text', 'photo', 'voice'], true)) {
+            return;
+        }
+        $this->tab = $kind;
+        $this->resetValidation();
+
+        if ($kind === 'text') {
+            $this->text = self::SAMPLE_TEXT;
+            $this->placeOrder(self::SAMPLE_TEXT, null, null, 'text');
+
+            return;
+        }
+
+        $source = $this->sampleSource($kind);
+        $bytes = $source !== null ? file_get_contents($source) : false;
+        if ($bytes === false) {
+            $this->addError('form', 'The sample is unavailable right now. Please try your own instead.');
+
+            return;
+        }
+        $stored = 'try/sample-'.$kind.'-'.uniqid().($kind === 'photo' ? '.jpg' : '.m4a');
+        Storage::disk('shared')->put($stored, $bytes);
+
+        $this->placeOrder(null, $kind === 'photo' ? $stored : null, $kind === 'voice' ? $stored : null, $kind);
+    }
+
+    private function placeOrder(?string $text, ?string $imagePath, ?string $audioPath, ?string $sampleKind): void
+    {
+        $key = 'try-order:'.(request()->ip() ?? 'unknown');
+        if (RateLimiter::tooManyAttempts($key, 10)) {
+            $minutes = max(1, (int) ceil(RateLimiter::availableIn($key) / 60));
+            $this->addError('form', "Too many tries — please come back in {$minutes} minute".($minutes === 1 ? '' : 's').'.');
+
+            return;
+        }
+        RateLimiter::hit($key, 3600);
+
         $order = (new OrderIntake)->handle(
             Shop::query()->firstOrFail(), null, 'try', $text, $imagePath, $audioPath
         );
         $this->orderId = $order->id;
         $this->simulated = false;
+        $this->sampleKind = $sampleKind;
+    }
+
+    private function sampleSource(string $kind): ?string
+    {
+        $file = $kind === 'photo' ? 'list/list_1.jpg' : 'voice/voice_1.m4a';
+        $path = base_path('../samples/'.$file);
+
+        return is_file($path) ? $path : null;
     }
 
     /**
@@ -90,7 +143,7 @@ class TryPage extends Component
 
     public function newOrder(): void
     {
-        $this->reset(['tab', 'text', 'photo', 'audio', 'orderId', 'simulated']);
+        $this->reset(['tab', 'text', 'photo', 'audio', 'orderId', 'simulated', 'sampleKind']);
         $this->resetValidation();
     }
 
