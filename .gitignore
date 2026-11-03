@@ -33,3 +33,6 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+# demo video build output (large)
+video/build/
